@@ -13,6 +13,7 @@ doc = """
             - SART Keyboard
             - SART Mouse
             - Choice Reaction Time Keyboard
+            -  Choice Reaction Time Mouse
         
         Questionnaires:
         ==============

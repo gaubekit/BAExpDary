@@ -2,7 +2,19 @@ from otree.api import *
 
 
 doc = """
-Your app description
+    This App is ment to get Calibrate EEG, Get Baseline Data For MFI, ZFE, VAS, and  EEG.
+    Further, thus App checkes whether our SART in a 2min Evaluation is a valid representation of Sustained Attention:
+        - Playing an original CPT Task for 5min # Todo: not implemented yet
+        - Playing Darys SART Task for 5min
+        - Playing Darys SART Task for 2 min
+        
+    Experiment Flow:
+        - EEG Calibration with Eyes Open and Eyes closed # TODO: I have to ask michael, fabio or lukas for duration
+        - MFI, ZFE, VAS as in App02
+        - original CPT 5min
+        - SART Dary 5min
+        - SART Dary 2min
+        - Eyes open as in App02
 """
 
 
