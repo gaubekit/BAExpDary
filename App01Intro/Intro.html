@@ -1,0 +1,15 @@
+{{ block title }}Conners CPT – Introduction{{ endblock }}
+{{ block content }}
+
+<p>
+  A letter will appear. Press the <b>Space</b> key,
+  unless it is a <b>{{ C.NO_GO_LETTER }}</b>.
+</p>
+
+<p>Stimulus duration: {{ C.STIM_DURATION_MS }} ms<br>
+Onset–onset interval: {{ C.ISI_RANGE_MS.0 }}–{{ C.ISI_RANGE_MS.1 }} ms<br>
+Total: {{ C.N_TRIALS }} trials</p>
+
+{{ next_button }}
+
+{{ endblock }}

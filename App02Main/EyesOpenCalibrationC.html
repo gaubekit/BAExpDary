@@ -1,49 +1,117 @@
 {% extends "global/Page.html" %}
 
+{% block title %}Eyes Open Calibration{% endblock %}
+
 {% block content %}
 
-  Please click the "Start Focus"-button and look at the cross. The cross will displayed for 20 seconds. You can proceed afterwards.<br>
-  <b>Please keep your eyes open and avoid any movement (bodey, eyes, etc.) during this time.<b>
+<style>
+  .my-box {
+    border: 1px solid #ccc;
+    padding: 40px 20px;
+    background-color: #f9f9f9;
+    max-width: 800px;
+    margin: 50px auto;
+    text-align: center;
+    font-family: sans-serif;
+  }
 
-  <br><br>
+  #xContainer {
+    display: none;           /* initially hidden */
+    margin-bottom: 20px;
+  }
 
-  <!-- Start-Button -->
-  <button id="startBtn" type="button">Start Focus</button>
+  #screen {
+    font-size: 200px;       /* very large font like CCPT */
+    font-weight: bold;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 300px;
+    user-select: none;
+  }
 
-  <!-- Kreuzbild (initial versteckt) -->
-  <div id="imageContainer" style="display: none; text-align: center; margin-top: 50px;">
-    <img src="{{ static 'kreuz_fokus.jpg' }}" alt="Fokuskreuz" style="width: 200px;">
+  #screen img.stimulus-img {
+    width: 40%;
+    margin-top: 20px;
+  }
+
+  .instruction {
+    font-size: 22px;
+    color: #444;
+    margin-top: 20px;
+  }
+
+  button {
+    font-size: 18px;
+    padding: 10px 20px;
+  }
+</style>
+
+<div class="my-box">
+  <!-- X container (hidden at first) -->
+  <div id="xContainer">
+    <div id="screen">
+      <img class="stimulus-img" src="{% static 'eyes_open.png' %}" alt="Open Eyes">
+    </div>
   </div>
 
-  <!-- Verstecktes Feld für Zeitstempel -->
-  <input type="hidden" name="eeg_timestamp_c" id="eegTimestamp">
+  <!-- Intro text -->
+  <div class="instruction" id="introText">
+    After clicking the <b>"Start Calibration"</b>-button a cross will appear in the center of the screen for {{ C.EEG_EYES_OPEN_INBETWEEN }} seconds.<br><br>
+    To calibrate the EEG, please keep your eyes open, look at this cross and avoid any movement (body, eyes, etc.) during this time.
+    <br><br>
+    <!-- Start Button -->
+    <button id="startBtn" type="button">Start Calibration</button>
+  </div>
 
-  <!-- Weiter-Button (initial deaktiviert und unsichtbar) -->
-  <br><br>
-  <button type="submit" id="nextBtn" style="display: none;">Next</button>
+  <!-- End text -->
+  <div class="instruction" id="endText" style="display: none;">
+    The calibration period is complete. You can proceed to the next page.
+
+    <br><br>
+    <!-- Next button (initially hidden) -->
+    <button type="submit" id="nextBtn" style="display: none;">Next</button>
+  </div>
+
+  <!-- Hidden fields for EEG timestamps -->
+  <input type="hidden" name="eeg_timestamp_eyes_open_c_start" id="eegTimestampStart">
+  <input type="hidden" name="eeg_timestamp_eyes_open_c_stop" id="eegTimestampStop">
+
+
+</div>
 
 {% endblock %}
 
-
 {% block scripts %}
 <script>
-  document.getElementById('startBtn').addEventListener('click', function () {
-    // 1. Start-Button ausblenden
+const xContainer = document.getElementById('xContainer');
+const introText = document.getElementById('introText');
+const endText = document.getElementById('endText');
+const startBtn = document.getElementById('startBtn');
+
+startBtn.addEventListener('click', function () {
+    // Hide start button and intro
     this.style.display = 'none';
+    introText.style.display = 'none';
 
-    // 2. Zeitstempel erfassen
-    const timestamp = new Date().toISOString();
-    document.getElementById('eegTimestamp').value = timestamp;
+    // Record EEG start timestamp
+    const startTimestamp = new Date().toISOString();
+    document.getElementById('eegTimestampStart').value = startTimestamp;
 
-    // 3. Kreuz anzeigen
-    const image = document.getElementById('imageContainer');
-    image.style.display = 'block';
+    // Show "X" container
+    xContainer.style.display = 'block';
 
-    // 4. Nach 20 Sekunden: Kreuz ausblenden + Weiter-Button einblenden
+    // After EEG_EYES_OPEN_INITIAL seconds: hide container, record stop timestamp, show end instruction + Next button
     setTimeout(function () {
-      image.style.display = 'none';
-      document.getElementById('nextBtn').style.display = 'inline-block';
-    }, 20000);
-  });
+        xContainer.style.display = 'none';
+
+        const stopTimestamp = new Date().toISOString();
+        document.getElementById('eegTimestampStop').value = stopTimestamp;
+
+        endText.style.display = 'block';
+        document.getElementById('nextBtn').style.display = 'inline-block';
+    }, {{ C.EEG_EYES_OPEN_INBETWEEN }} * 1000);
+});
 </script>
 {% endblock %}

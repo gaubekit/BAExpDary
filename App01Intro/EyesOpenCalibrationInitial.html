@@ -58,7 +58,7 @@
 
   <!-- Intro text -->
   <div class="instruction" id="introText">
-    After clicking the <b>"Start Calibration"</b>-button a cross will appear in the center of the screen for {{ C.EEG_EYES_OPEN_INBETWEEN }} seconds.<br><br>
+    After clicking the <b>"Start Calibration"</b>-button a cross will appear in the center of the screen for {{ C.EEG_EYES_OPEN_INITIAL }} seconds.<br><br>
     To calibrate the EEG, please keep your eyes open, look at this cross and avoid any movement (body, eyes, etc.) during this time.
     <br><br>
     <!-- Start Button -->
@@ -75,8 +75,8 @@
   </div>
 
   <!-- Hidden fields for EEG timestamps -->
-  <input type="hidden" name="eeg_timestamp_eyes_open_a_start" id="eegTimestampStart">
-  <input type="hidden" name="eeg_timestamp_eyes_open_a_stop" id="eegTimestampStop">
+  <input type="hidden" name="eeg_timestamp_eo_intro_start" id="eegTimestampStart">
+  <input type="hidden" name="eeg_timestamp_eo_intro_stop" id="eegTimestampStop">
 
 
 </div>
@@ -111,7 +111,7 @@ startBtn.addEventListener('click', function () {
 
         endText.style.display = 'block';
         document.getElementById('nextBtn').style.display = 'inline-block';
-    }, {{ C.EEG_EYES_OPEN_INBETWEEN }} * 1000);
+    }, {{ C.EEG_EYES_OPEN_INITIAL }} * 1000);
 });
 </script>
 {% endblock %}

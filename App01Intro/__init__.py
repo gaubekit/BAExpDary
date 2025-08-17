@@ -1,4 +1,5 @@
 from otree.api import *
+import random, statistics, json
 
 
 doc = """
@@ -23,6 +24,22 @@ class C(BaseConstants):
     PLAYERS_PER_GROUP = None
     NUM_ROUNDS = 1
 
+    # --- Duration for Eyes Open/Closed --- #
+    EEG_EYES_OPEN_INBETWEEN = 20
+    EEG_EYES_OPEN_INITIAL = 60  # * 1.5
+    EEG_EYES_CLOSED_INITIAL = 60  # * 3
+
+
+    # --- Parameter for CCPT-III ---#
+    N_TRIALS = 30  # Demo: 30 Trials (original ~360)
+    NO_GO_LETTER = 'X'
+    NO_GO_RATE = 0.10
+    LETTERS = [chr(i) for i in range(65, 91)]
+    STIM_DURATION_MS = 400  # Demo 400 seconds, (original 250)
+    ISI_RANGE_MS = (1500, 2500)
+    RESPONSE_KEY = ' '
+    # TODO Kübra: check these parameters
+
 
 class Subsession(BaseSubsession):
     pass
@@ -33,20 +50,253 @@ class Group(BaseGroup):
 
 
 class Player(BasePlayer):
-    pass
+    # ----- Assessment Tasks----- #
+    # var for CCPT-III
+    ccpt_results_json = models.LongStringField()
+    ccpt_hits = models.IntegerField()
+    ccpt_omissions = models.IntegerField()
+    ccpt_commissions = models.IntegerField()
+    ccpt_mean_rt_ms = models.IntegerField()
+    ccpt_sd_rt_ms = models.IntegerField()
+
+    # var for SART 5min
+    # TODO Dary: add your metrics
+
+    # var for SART 2min
+    # TODO Dary: add your metrics
+
+    # ----- Assessment Questionnaires ----- #
+    # Note: Items identical to App02 and App03
+    # var for Multidimensional Fatigue Inventory (MFI)
+    mfi_mental_1 = models.IntegerField(widget=widgets.RadioSelect, choices=list(range(-10, 11)))
+    mfi_mental_2 = models.IntegerField(widget=widgets.RadioSelect, choices=list(range(-10, 11)))
+    mfi_mental_3 = models.IntegerField(widget=widgets.RadioSelect, choices=list(range(-10, 11)))
+    mfi_mental_4 = models.IntegerField(widget=widgets.RadioSelect, choices=list(range(-10, 11)))
+
+    # var for Zoom Fatigue & Exhaustion Questionnaire
+    zfe_general_1 = models.IntegerField(widget=widgets.RadioSelect, choices=list(range(-10, 11)))
+    zfe_general_2 = models.IntegerField(widget=widgets.RadioSelect, choices=list(range(-10, 11)))
+    zfe_general_3 = models.IntegerField(widget=widgets.RadioSelect, choices=list(range(-10, 11)))
+
+    # var for Visual Analogous Scales
+    mental_fatigue = models.IntegerField(min=0, max=100)
+    motivation = models.IntegerField(min=0, max=101)
+    mental_workload = models.IntegerField(min=0, max=100)
+    frustration = models.IntegerField(min=0, max=100)
+    sleepiness = models.IntegerField(min=0, max=100)
+    mood = models.IntegerField(min=0, max=100)
+
+    # ----- EEG Timestamps ----- #
+    eeg_timestamp_eyes_open_start, eeg_timestamp_eyes_open_stop = models.StringField(), models.StringField()
+    eeg_timestamp_eo_intro_start, eeg_timestamp_eo_intro_stop = models.StringField(), models.StringField()
+    eeg_timestamp_ec_intro_start, eeg_timestamp_ec_intro_stop = models.StringField(), models.StringField()
+    eeg_timestamp_ccpt_start, eeg_timestamp_ccpt_stop = models.StringField(), models.StringField()
+
+
+
+# HELP FUNCTIONS
+def make_trial_sequence():
+    """
+    Generate a randomized sequence of trials for the Conners Continuous Performance Task (CPT).
+
+    - Calculates the number of Go and No-Go trials based on the total number of trials and the
+      specified No-Go rate.
+    - Assigns letters to Go trials randomly, ensuring the No-Go letter is excluded.
+    - Shuffles all trials to randomize their order.
+    - Assigns a random inter-stimulus interval (ISI) within the specified range to each trial.
+
+    Returns:
+        list of dict: A list of trial dictionaries, each containing:
+            - 'letter' (str): The letter to be displayed.
+            - 'is_no_go' (bool): Whether the trial is a No-Go trial.
+            - 'isi_ms' (int): The inter-stimulus interval in milliseconds.
+    """
+
+    n_no_go = int(C.N_TRIALS * C.NO_GO_RATE)
+    n_go = C.N_TRIALS - n_no_go
+    go_letters = [l for l in C.LETTERS if l != C.NO_GO_LETTER]
+
+    trials = []
+    trials += [{'letter': C.NO_GO_LETTER, 'is_no_go': True} for _ in range(n_no_go)]
+    trials += [{'letter': random.choice(go_letters), 'is_no_go': False} for _ in range(n_go)]
+    random.shuffle(trials)
+
+    for t in trials:
+        t['isi_ms'] = random.randint(*C.ISI_RANGE_MS)
+    return trials
+
+
+def compute_summary_from_results(player: Player):
+    """
+    Compute summary statistics from a player's trial results in the CPT task.
+
+    - Parses the player's JSON results.
+    - Counts the number of ccpt_hits (correct responses to Go trials), ccpt_omissions (missed Go trials),
+      and ccpt_commissions (incorrect responses to No-Go trials).
+    - Collects reaction times (RTs) for correct Go responses and computes:
+        - mean reaction time (ccpt_mean_rt_ms)
+        - standard deviation of reaction times (ccpt_sd_rt_ms)
+    - Stores these summary statistics as attributes on the player object.
+
+    Args:
+        player (Player): The player object containing the 'ccpt_results_json' field with trial data.
+
+    Returns:
+        None: The function updates the player object in-place.
+    """
+
+    data = json.loads(player.ccpt_results_json)
+
+    ccpt_hits, ccpt_omissions, ccpt_commissions = 0, 0, 0
+    rts = []
+
+    for tr in data:
+        is_no_go = tr['is_no_go']
+        responded = tr['responded']
+        rt = tr.get('rt_ms', None)
+
+        if not is_no_go:
+            if responded:
+                ccpt_hits += 1
+                if rt is not None:
+                    rts.append(rt)
+            else:
+                ccpt_omissions += 1
+        else:
+            if responded:
+                ccpt_commissions += 1
+
+    player.ccpt_hits = ccpt_hits
+    player.ccpt_omissions = ccpt_omissions
+    player.ccpt_commissions = ccpt_commissions
+    player.ccpt_mean_rt_ms = int(statistics.mean(rts)) if rts else 0
+    player.ccpt_sd_rt_ms = int(statistics.pstdev(rts)) if len(rts) > 1 else 0
 
 
 # PAGES
-class MyPage(Page):
+
+# ----------------- Calibrating EEG ----------------- #
+class EyesOpenCalibrationInitial(Page):  # TODO: Define "xx" time
+    """
+    This page display a cross, after clicking a button. Focusing on this cross without
+    any movement allows for XX seconds of artefact-free EEG Date.
+    Therefore, the client-timestamp is saved to match it with the EEG timestamps
+    """
+    form_model = 'player'
+    form_fields = ['eeg_timestamp_eo_intro_start', 'eeg_timestamp_eo_intro_stop']
+
+
+class EyesClosedCalibrationInitial(Page):  # TODO: Define "xx" time
+    """
+    This page display an eye-symbol, after clicking a button. The eye's should be closed during this time.
+    A sound will be played after xx seconds, to indicate the time is over and the eyes can be opend again
+    """
+    form_model = 'player'
+    form_fields = ['eeg_timestamp_ec_intro_start', 'eeg_timestamp_ec_intro_stop']
+
+    # TODO: play sound after xx seconds
+    # TODO: second-button: test "sound"
+
+
+# ----------------- Questionnaires (identical to App02) ----------------- #
+class MentalFatigueQuestionnaires(Page):
+    """
+    Questionnaires for Mental Fatigue
+    - ZFE Subscale General
+    - MFI Subscale Mental
+    """
+    form_model = 'player'
+    form_fields = ['mfi_mental_1', 'mfi_mental_2', 'mfi_mental_3', 'mfi_mental_4',
+                   'zfe_general_1', 'zfe_general_2', 'zfe_general_3']
+
+
+class VisualAnalogousScales(Page):
+    """
+    Visual-Analogous-Scales (VAS) for mood, sleepiness, motivation, workload, frustration, fatigue.
+    Quick and Dirty Solution - Instructions not validated.
+    In general, mental readiness is measured with mood, sleepiness and motivation
+    """
+    form_model = 'player'
+    form_fields = ['mental_fatigue', 'motivation', 'sleepiness', 'mood', 'mental_workload', 'frustration']
+
+
+class EyesOpenCalibration(Page):
+    """
+    This page display a cross, after clicking a button. Focusing on this cross without
+    any movement allows for 20 seconds of artefact-free EEG Date.
+    Therefore, the client-timestamp is saved to match it with the EEG timestamps
+    """
+    form_model = 'player'
+    form_fields = ['eeg_timestamp_eyes_open_start', 'eeg_timestamp_eyes_open_stop']
+
+
+# ----------------- Assessment Tasks ----------------- #
+class AssessmentTaskCCPT(Page):
+    """
+   Conners Continuous Performance Task (CCPT).
+
+    - Uses 'player' as the form model and stores the raw trial results in the 'ccpt_results_json' field.
+    - Prepares variables for the frontend template, including:
+        - RESPONSE_KEY: the key used for responses.
+        - STIM_DURATION_MS: stimulus presentation duration in milliseconds.
+        - TRIALS: a randomized sequence of Go and No-Go trials generated by make_trial_sequence().
+    - After the page is completed, computes summary statistics from the player's responses
+      (ccpt_hits, ccpt_omissions, ccpt_commissions, mean and SD of reaction times) and stores them on the player object.
+    """
+
+    form_model = 'player'
+    form_fields = [
+        'ccpt_results_json',
+        'eeg_timestamp_ccpt_start',
+        'eeg_timestamp_ccpt_stop',
+    ]
+
+    @staticmethod
+    def vars_for_template(player: Player):
+        return dict(
+            RESPONSE_KEY=C.RESPONSE_KEY,
+            STIM_DURATION_MS=C.STIM_DURATION_MS,
+            TRIALS=make_trial_sequence(),
+        )
+
+    @staticmethod
+    def before_next_page(player: Player, timeout_happened):
+        compute_summary_from_results(player)
+
+
+class Intro(Page):  # TODO: only for testing reasons
+    pass
+    # TODO: Integrate description into Task -> should be displayerd before clicking
+    #       "start" and disabled while the task is running
+
+
+class Results(Page):  # TODO: only for testing reasons
     pass
 
 
-class ResultsWaitPage(WaitPage):
-    pass
+class SustainedAttentionKeyboard5min(Page):
+    pass  # TODO Dary: Your code goes here
 
 
-class Results(Page):
-    pass
+class SustainedAttentionKeyboard2min(Page):
+    pass  # TODO Dary: Your code goes here
 
 
-page_sequence = [MyPage, ResultsWaitPage, Results]
+page_sequence = [
+    # Welcome, TODO: Some first page
+
+    # -- Questionnaires --#
+    EyesOpenCalibrationInitial,
+    EyesClosedCalibrationInitial,
+    MentalFatigueQuestionnaires,
+    VisualAnalogousScales,
+
+    # -- Assessment  --#
+    # Intro,  # TODO: outdated
+    AssessmentTaskCCPT,
+    # Results,  # TODO: only for testing
+    # SustainedAttentionKeyboard5min,  # TODO Dary
+    # SustainedAttentionKeyboard2min,  # TODO Dary
+
+    EyesOpenCalibration,
+]

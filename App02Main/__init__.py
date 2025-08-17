@@ -45,6 +45,7 @@ class C(BaseConstants):
         [2, 1, 3],  # Level sequence in first iteration
         [3, 1, 2]  # Level sequence in second iteration
     ]  # Note: not used, hardcoded in js
+    EEG_EYES_OPEN_INBETWEEN = 20  # central configuration for eyes open calibration
 
 
 class Subsession(BaseSubsession):
@@ -95,7 +96,7 @@ class Player(BasePlayer):
     mood = models.IntegerField(min=0, max=100)
 
     # var for Timestamp EEG
-    eeg_timestamp = models.StringField()
+    eeg_timestamp_eyes_open_start, eeg_timestamp_eyes_open_stop = models.StringField(), models.StringField()
 
     # ----- MATB PERFORMANCE ----- #
     # var for first block
@@ -122,21 +123,21 @@ class Player(BasePlayer):
     motivation_a = models.IntegerField(min=0, max=101)
     mental_workload_a = models.IntegerField(min=0, max=100)
     frustration_a = models.IntegerField(min=0, max=100)
-    eeg_timestamp_a = models.StringField()
+    eeg_timestamp_eyes_open_a_start, eeg_timestamp_eyes_open_a_stop = models.StringField(), models.StringField()
 
     # var for second block
     mental_fatigue_b = models.IntegerField(min=0, max=100)
     motivation_b = models.IntegerField(min=0, max=101)
     mental_workload_b = models.IntegerField(min=0, max=100)
     frustration_b = models.IntegerField(min=0, max=100)
-    eeg_timestamp_b = models.StringField()
+    eeg_timestamp_eyes_open_b_start, eeg_timestamp_eyes_open_b_stop = models.StringField(), models.StringField()
 
     # var for third block
     mental_fatigue_c = models.IntegerField(min=0, max=100)
     motivation_c = models.IntegerField(min=0, max=101)
     mental_workload_c = models.IntegerField(min=0, max=100)
     frustration_c = models.IntegerField(min=0, max=100)
-    eeg_timestamp_c = models.StringField()
+    eeg_timestamp_eyes_open_c_start, eeg_timestamp_eyes_open_c_stop = models.StringField(), models.StringField()
 
 
 # PAGES
@@ -200,7 +201,7 @@ class EyesOpenCalibration(Page):
     Therefore, the client-timestamp is saved to match it with the EEG timestamps
     """
     form_model = 'player'
-    form_fields = ['eeg_timestamp']
+    form_fields = ['eeg_timestamp_eyes_open_start', 'eeg_timestamp_eyes_open_stop']
 
 
 # ----------------- Mental Fatigue Block  ----------------- #
@@ -237,7 +238,7 @@ class VisualAnalogousScalesShortA(Page):
 class EyesOpenCalibrationA(Page):
     """ 20 seconds of artefact-free EEG Date """
     form_model = 'player'
-    form_fields = ['eeg_timestamp_a']
+    form_fields = ['eeg_timestamp_eyes_open_a_start', 'eeg_timestamp_eyes_open_a_stop']
 
     @staticmethod
     def is_displayed(player):
@@ -275,7 +276,7 @@ class VisualAnalogousScalesShortB(Page):
 class EyesOpenCalibrationB(Page):
     """ 20 seconds of artefact-free EEG Date """
     form_model = 'player'
-    form_fields = ['eeg_timestamp_b']
+    form_fields = ['eeg_timestamp_eyes_open_b_start', 'eeg_timestamp_eyes_open_b_stop']
 
     @staticmethod
     def is_displayed(player):
@@ -313,7 +314,7 @@ class VisualAnalogousScalesShortC(Page):
 class EyesOpenCalibrationC(Page):
     """ 20 seconds of artefact-free EEG Date """
     form_model = 'player'
-    form_fields = ['eeg_timestamp_c']
+    form_fields = ['eeg_timestamp_eyes_open_c_start', 'eeg_timestamp_eyes_open_c_stop']
 
     @staticmethod
     def is_displayed(player):
@@ -321,7 +322,7 @@ class EyesOpenCalibrationC(Page):
 
 
 page_sequence = [
-    # Assessment Block Tasks
+    # -- Assessment Block Tasks -- #
     # TODO: Activate assessment task pages in page_sequence
     # Aim,
     # ReactionTimeKeyboard,
@@ -331,12 +332,12 @@ page_sequence = [
     # ChoiceReactionTimeKeyboard,
     # ChoiceReactionTimeMouse,
 
-    # Assessment Block Questionnaires
+    # -- Assessment Block Questionnaires --#
     MentalFatigueQuestionnaires,
     VisualAnalogousScales,
     EyesOpenCalibration,
 
-    # Mental Fatigue Block
+    # -- Mental Fatigue Block --#
     MatbTaskA,
     VisualAnalogousScalesShortA,
     EyesOpenCalibrationA,

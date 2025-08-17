@@ -1,10 +1,10 @@
-{{ block title }}
-    Page title
-{{ endblock }}
-
+{{ block title }}Results{{ endblock }}
 {{ block content }}
-
-    {{ next_button }}
+<ul>
+  <li>ccpt_hits: {{ player.ccpt_hits }}</li>
+  <li>ccpt_omissions: {{ player.ccpt_omissions }}</li>
+  <li>ccpt_commissions: {{ player.ccpt_commissions }}</li>
+  <li>RT Mittelwert: {{ player.ccpt_mean_rt_ms }} ms</li>
+  <li>RT SD: {{ player.ccpt_sd_rt_ms }} ms</li>
+</ul>
 {{ endblock }}
-
-

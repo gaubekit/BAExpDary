@@ -2,8 +2,18 @@ from os import environ
 
 SESSION_CONFIGS = [
     dict(
-        name='BAExpDary',
+        name='TestApp01',
+        app_sequence=['App01Intro'],
+        num_demo_participants=1,
+    ),
+    dict(
+        name='TestApp02',
         app_sequence=['App02Main'],
+        num_demo_participants=1,
+    ),
+    dict(
+        name='TestApp03',
+        app_sequence=['App03Outro'],
         num_demo_participants=1,
     ),
 ]
@@ -35,3 +45,5 @@ ADMIN_PASSWORD = environ.get('OTREE_ADMIN_PASSWORD')
 DEMO_PAGE_INTRO_HTML = """ """
 
 SECRET_KEY = '6576475994714'
+
+DEBUG = False
