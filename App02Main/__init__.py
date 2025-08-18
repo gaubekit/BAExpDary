@@ -1,4 +1,5 @@
 from otree.api import *
+import json
 
 doc = """
     - 3 Rounds of Assessment Block +  Mental Fatigue Block
@@ -65,6 +66,14 @@ class Player(BasePlayer):
     """
     # ----- Assessment Tasks----- #
     # TODO: Assessment Task Metrics go here
+    timings_json = models.LongStringField(blank=True, null=True)
+    aim_timings = models.LongStringField(blank=True, null=True)
+    sart_timings = models.LongStringField(blank=True, null=True)
+    sart_mt_timings = models.LongStringField(blank=True, null=True)
+    rt_timings = models.LongStringField(blank=True, null=True)
+    rt_mt_timings = models.LongStringField(blank=True, null=True)
+    crt_timings = models.LongStringField(blank=True, null=True)
+    crt_mt_timings = models.LongStringField(blank=True, null=True)
 
     # ----- Assessment Questionnaires ----- #
     # var for Multidimensional Fatigue Inventory (MFI)
@@ -143,32 +152,133 @@ class Player(BasePlayer):
 # PAGES
 # ----------------- Assessment Block - Tasks ----------------- #
 # all tasks are played for 2 minutes
+def add_timings(player, idx, updates: dict, field: str = 'timings_json'):
+    """
+    Append/merge per-trial timing data into a JSON-backed dictionary on the Player.
+
+    - Expects a JSON field on `player` (default: 'timings_json') that stores a dict of trial entries,
+      keyed by the trial index (string).
+    - Safely reads the existing JSON using `player.field_maybe_none(field)`:
+        - Parses JSON to a dict if present.
+        - Falls back to an empty dict on null/invalid/non-dict content.
+    - Ensures the entry for the given trial key exists and is a dict, then merges `updates`:
+        - Skips keys whose values are `None` (does not overwrite existing values with nulls).
+        - Writes the merged entry back under the trial key.
+    - Note: This helper updates the in-memory `store`; persisting back to the model
+      (e.g., `setattr(player, field, json.dumps(store))`) must be done by the caller
+      or elsewhere in the calling flow.
+    """
+    key = str(idx)
+
+    # safe read for nullable fields
+    raw = player.field_maybe_none(field)
+    try:
+        store = json.loads(raw) if raw else {}
+        if not isinstance(store, dict):
+            store = {}
+    except Exception:
+        store = {}
+
+    # merge (skip None values)
+    entry = store.get(key)
+    if not isinstance(entry, dict):
+        entry = {}
+    entry.update({k: v for k, v in updates.items() if v is not None})
+    store[key] = entry
+
+    # assign back 
+    setattr(player, field, json.dumps(store))
 
 class Aim(Page):  # better name?
-    pass  # TODO: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'reaction_time': data.get('leave_time'),
+            'response_time': data.get('response_time'),
+        }, field='aim_timings')
 
 
 class ReactionTimeKeyboard(Page):
-    pass  # TODO: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'reaction_time': data.get('reaction_time'),
+        }, field='rt_timings')
 
 class ReactionTimeMouse(Page):
-    pass  # TODO: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'movement_time': data.get('response_time'),
+            'reaction_time': data.get('leave_time'),
+        }, field='rt_mt_timings')
 
 
 class SustainedAttentionKeyboard(Page):
-    pass  # TODO: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'reaction_time': data.get('reaction_time'),
+            'is_correct': data.get('is_correct'),
+            'trial_type': data.get('trial_type'),
+        }, field='sart_timings')
 
 
 class SustainedAttentionMouse(Page):
-    pass  # TODO: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'trial_type': data.get('trial_type'),        # "go" | "nogo"
+            'is_correct': data.get('is_correct'),
+            'reaction_time': data.get('reaction_time'),  # equals leave_time on correct Go
+            'movement_time': data.get('movement_time'),  # click after release
+            'leave_time': data.get('leave_time'),  
+            'error_type': data.get('error_type'),        # commission | omission | no_click | no_release | null
+      }, field='sart_mt_timings')
 
 
 class ChoiceReactionTimeKeyboard(Page):
-    pass  # TODO: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'reaction_time': data.get('reaction_time'),
+            'movement_time': data.get('movement_time'),
+            'is_correct': data.get('is_correct'),
+            'clicked_index': data.get('clicked_index'),
+        }, field='crt_timings')
+
 
 
 class ChoiceReactionTimeMouse(Page):
-    pass  # TODO: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'reaction_time': data.get('reaction_time'),
+            'movement_time': data.get('movement_time'),
+            'is_correct': data.get('is_correct'),
+            'clicked_index': data.get('clicked_index'),
+        }, field='crt_mt_timings')
 
 
 # ----------------- Assessment Block - Questionnaires ----------------- #

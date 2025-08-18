@@ -1,0 +1,286 @@
+{{ block title }} SART MT {{ endblock }} {{ block content }} {% load otree
+static %}
+<link rel="stylesheet" href="{% static 'styles/assessment.css' %}" />
+
+<body>
+  <div class="circle-container">
+    <div class="circle-button" id="center-circle"></div>
+    <div class="circle-button" id="hold-button"></div>
+    <div id="message"></div>
+  </div>
+
+  <div id="next-container" style="display: none">
+    <p>{{ next_button }}</p>
+  </div>
+
+  <script>
+    // --- DOM References ---
+    const centerCircle = document.getElementById("center-circle");
+    const holdButton = document.getElementById("hold-button");
+    const message = document.getElementById("message");
+
+    // --- Configuration ---
+    const colors = ["#FFCC00", "#90D050", "#3C5DAE", "#7A8DBE", "#005000"]; // #005000 = green (No-Go)
+
+    // --- Trial State Variables ---
+    let currentColor = "";
+    let isGreen = false;
+    let currentTrialType = null;           // "go" | "nogo"
+    let showingFeedback = false;
+    let cycleStarted = false;
+    let trialIndex = 0;
+
+    let stimulusShownAt = 0;
+    let releaseAt = null;
+    let awaitingClick = false;
+    let holding = false;
+
+    // --- Timing Handles ---
+    let timeoutId = null;
+    let initialTimeout = null;
+
+    // --- Visual helper ---
+    function setHoldVisual(isHolding) {
+      holdButton.style.backgroundColor = isHolding ? "gray" : "white";
+    }
+
+    // --- Helpers ---
+    function resetFlags() {
+      isGreen = false;
+      currentTrialType = null;
+      stimulusShownAt = 0;
+      releaseAt = null;
+      awaitingClick = false;
+    }
+
+    function startTrial() {
+      cycleStarted = true;
+      resetFlags();
+      centerCircle.style.backgroundColor = "gray";
+      centerCircle.innerText = "";
+
+      clearTimeout(initialTimeout);
+      clearTimeout(timeoutId);
+
+      initialTimeout = setTimeout(startColorCycle, 2000);
+    }
+
+    function startColorCycle() {
+      showNextStimulus();
+    }
+
+    function showNextStimulus() {
+      if (showingFeedback || !cycleStarted) return;
+
+      const colorIndex = Math.floor(Math.random() * colors.length);
+      currentColor = colors[colorIndex];
+      isGreen = currentColor === "#005000";
+      currentTrialType = isGreen ? "nogo" : "go";
+
+      centerCircle.style.backgroundColor = currentColor;
+
+      stimulusShownAt = performance.now();
+
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(onTrialWindowEnd, 2000);
+    }
+
+    function onTrialWindowEnd() {
+      if (showingFeedback) return;
+
+      if (currentTrialType === "nogo") {
+        // Correct withhold
+        liveSend({
+          trial_index: trialIndex,
+          trial_type: "nogo",
+          is_correct: true,
+          reaction_time: null,
+          movement_time: null,
+          error_type: null,
+        });
+        trialIndex++;
+        cycleStarted = false;
+        startTrial();
+      } else {
+        // GO trial ended
+        if (releaseAt === null) {
+          showAndLog("Missed!", {
+            trial_type: "go",
+            is_correct: false,
+            reaction_time: null,
+            movement_time: null,
+            error_type: "omission",
+          });
+        } else if (awaitingClick) {
+          const rt = releaseAt - stimulusShownAt;
+          showAndLog("Too slow!", {
+            trial_type: "go",
+            is_correct: false,
+            reaction_time: rt.toFixed(2),
+            movement_time: null,
+            error_type: "no_click",
+          });
+        }
+      }
+    }
+
+    function showAndLog(text, payload) {
+      liveSend({
+        trial_index: trialIndex,
+        ...payload,
+      });
+      trialIndex++;
+      showMessage(text);
+    }
+
+    function showMessage(text) {
+      showingFeedback = true;
+      clearTimeout(timeoutId);
+      clearTimeout(initialTimeout);
+
+      cycleStarted = false;
+      centerCircle.style.backgroundColor = "gray";
+      message.innerText = text;
+
+      // Always reset hold button to white on feedback 
+      setHoldVisual(false);
+
+      setTimeout(() => {
+        showingFeedback = false;
+        message.innerText = "";
+        if (holding && !cycleStarted) startTrial();
+      }, 1000);
+    }
+
+    // --- Response Handlers ---
+
+    // Center click: only correct on GO trials after a release
+    function handleCenterClick() {
+      if (showingFeedback || !cycleStarted) return;
+
+      const now = performance.now();
+
+      if (currentTrialType === "go") {
+        if (!releaseAt) {
+          showAndLog("Release first!", {
+            trial_type: "go",
+            is_correct: false,
+            reaction_time: null,
+            movement_time: null,
+            error_type: "no_release",
+          });
+          return;
+        }
+        const rt = releaseAt - stimulusShownAt;  // reaction_time = release RT
+        const mt = now - releaseAt;              // movement time after release
+        liveSend({
+          trial_index: trialIndex,
+          trial_type: "go",
+          is_correct: true,
+          reaction_time: rt.toFixed(2),
+          movement_time: mt.toFixed(2),
+          error_type: null,
+        });
+        trialIndex++;
+        showMessage("Correct!");
+        awaitingClick = false;
+      } else {
+        // No-Go: any click is commission error
+        const rtClick = now - stimulusShownAt;
+        showAndLog("Should have withheld!", {
+          trial_type: "nogo",
+          is_correct: false,
+          reaction_time: rtClick.toFixed(2),
+          movement_time: null,
+          error_type: "commission",
+        });
+      }
+    }
+
+    // Start holding to begin a trial
+    holdButton.addEventListener("mousedown", () => {
+      if (cycleStarted || showingFeedback || holding) return;
+      holding = true;
+      setHoldVisual(true);  // was: holdButton.style.backgroundColor = "gray";
+      startTrial();
+    });
+
+    // Release to respond; correct only if GO and followed by center click
+    holdButton.addEventListener("mouseup", () => {
+      if (!holding) return;
+      holding = false;
+      setHoldVisual(false); // ensure it returns to white immediately (NEW)
+
+      // If no stimulus yet (during gray delay)
+      if (!currentTrialType) {
+        showMessage("Too early!");
+        return;
+      }
+
+      const now = performance.now();
+      const rtLeave = now - stimulusShownAt;
+
+      if (currentTrialType === "nogo") {
+        // Commission error: released on No-Go
+        showAndLog("Wrong!", {
+          trial_type: "nogo",
+          is_correct: false,
+          reaction_time: rtLeave.toFixed(2),
+          movement_time: null,
+          error_type: "commission",
+        });
+      } else {
+        // GO: record release time & wait for center click
+        releaseAt = now;
+        awaitingClick = true;
+        liveSend({
+          trial_index: trialIndex,
+          trial_type: "go",
+          leave_time: rtLeave.toFixed(2),
+        });
+      }
+    });
+
+    // Leaving the hold area while holding (this was the gray-stuck case)
+    holdButton.addEventListener("mouseleave", () => {
+      if (!holding) return;
+      console.log("lololol");
+      holding = false;
+      setHoldVisual(false); // FIX: always reset to white on leave 
+
+      if (!currentTrialType) {
+        showMessage("Release your mouse");
+      } else if (currentTrialType === "nogo") {
+        showAndLog("Wrong!", {  
+          trial_type: "nogo",
+          is_correct: false,
+          reaction_time: (performance.now() - stimulusShownAt).toFixed(2),
+          movement_time: null,
+          error_type: "commission",
+        });
+      } else {
+        // GO: treat like a normal release; wait for click
+        releaseAt = performance.now();
+        awaitingClick = true;
+        liveSend({
+          trial_index: trialIndex,
+          trial_type: "go",
+          leave_time: (releaseAt - stimulusShownAt).toFixed(2),
+        });
+      }
+    });
+
+    centerCircle.addEventListener("click", handleCenterClick);
+
+    window.addEventListener("load", () => {
+      // Time in milliseconds (2 minutes)
+      const autoAdvanceMs = 2 * 60 * 1000;
+
+      setTimeout(() => {
+        document.getElementById("next-container").style.display = "block";
+      }, autoAdvanceMs);
+    });
+  </script>
+</body>
+
+{{ endblock }}

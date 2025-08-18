@@ -1,0 +1,273 @@
+{{ block title }} Choice Reaction with One Color + Movement Time {{ endblock }} {{ block
+content }}
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Choice Reaction Task</title>
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f0f0f0;
+    }
+
+    .circle-container {
+      position: relative;
+      width: 400px;
+      height: 400px;
+    }
+
+    .circle-button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: #000;
+      border: 1px solid #333;
+      background-color: gray;
+      cursor: pointer;
+      position: absolute;
+      user-select: none;
+    }
+
+    #center-circle {
+      top: 300px;
+      left: 170px;
+      width: 60px;
+      height: 60px;
+      background-color: white;
+      border: none;
+      cursor: default;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: bold;
+      font-size: 12px;
+      color: black;
+      text-align: center;
+    }
+
+    .circle-button.active {
+      background-color: #005000;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="circle-container">
+    <div class="circle-button" id="circle1"></div>
+    <div class="circle-button" id="circle2"></div>
+    <div class="circle-button" id="circle3"></div>
+    <div class="circle-button" id="circle4"></div>
+    <div class="circle-button" id="circle5"></div>
+    <div class="circle-button" id="center-circle"></div>
+  </div>
+
+  <div id="next-container" style="display: none">
+      <p>{{ next_button }}</p>
+  </div>
+
+  <script>
+  // --- DOM References ---
+  const circleElements = [
+    document.getElementById("circle1"),
+    document.getElementById("circle2"),
+    document.getElementById("circle3"),
+    document.getElementById("circle4"),
+    document.getElementById("circle5"),
+  ];
+  const centerCircle = document.getElementById("center-circle");
+
+  // --- Geometry Setup for Circular Layout ---
+  const centerX = 200;
+  const centerY = 330;
+  const radius = 160;
+  const angleOffset = Math.PI / 2;
+  const spread = Math.PI / 1.3;
+  const startAngle = angleOffset - spread / 2;
+
+  const circles = [...circleElements].reverse();
+  circles.forEach((circle, i) => {
+    const angle = startAngle + (i * spread) / (circles.length - 1);
+    const x = centerX + radius * Math.cos(angle) - 30;
+    const y = centerY - radius * Math.sin(angle) - 30;
+    circle.style.left = `${x}px`;
+    circle.style.top = `${y}px`;
+  });
+
+  // --- State Variables ---
+  let activeIndex = -1;
+  let holding = false;
+  let canClick = false;           // becomes true once a target turns green
+  let holdTimeout = null;
+  let trialIndex = 0;
+
+  let stimOnsetAt = 0;            // when a circle turned green
+  let releaseAt = null;           // when center was released (start of movement)
+  let lastClick = 0;              // time of release (used to calc movement time)
+
+  // --- Small helpers ---
+  function showMessage(text) {
+    centerCircle.innerText = text;
+    setTimeout(() => { centerCircle.innerText = ""; }, 1000);
+  }
+
+  function getRandomIndex() {
+    return Math.floor(Math.random() * circleElements.length);
+  }
+
+  function resetCircles() {
+    circleElements.forEach((circle) => {
+      circle.classList.remove("active");
+      circle.style.backgroundColor = "gray";
+    });
+    activeIndex = -1;
+    canClick = false;
+  }
+
+  function resetTrial() {
+    resetCircles();
+    centerCircle.style.backgroundColor = "white";
+    centerCircle.style.border = "none";
+    centerCircle.classList.remove("holding");
+    holding = false;
+    canClick = false;
+    stimOnsetAt = 0;
+    releaseAt = null;
+  }
+
+  function send(payload) {
+    // round numeric times to 2 decimals if present
+    ["reaction_time", "movement_time"].forEach(k => {
+      if (payload[k] != null) payload[k] = Number(payload[k].toFixed(2));
+    });
+    payload.trial_index = trialIndex;
+    liveSend(payload);
+  }
+
+  function highlightRandomCircle() {
+    resetCircles();
+    activeIndex = getRandomIndex();
+    const target = circleElements[activeIndex];
+    target.classList.add("active");
+    target.style.backgroundColor = "#005000"; // green
+    canClick = true;
+    stimOnsetAt = performance.now();
+  }
+
+  // --- Event Listeners (responses & flow) ---
+
+  // Enable pointer on center
+  centerCircle.style.pointerEvents = "auto";
+  centerCircle.style.cursor = "pointer";
+
+  // Press & hold to arm the trial
+  centerCircle.addEventListener("mousedown", () => {
+    if (holding || canClick) return;
+    holding = true;
+    centerCircle.style.backgroundColor = "gray";
+    centerCircle.classList.add("holding");
+
+    const delay = Math.random() * 3000 + 1000; // 1–4s
+    holdTimeout = setTimeout(() => {
+      if (holding) highlightRandomCircle();
+    }, delay);
+  });
+
+  // Release center:
+  // - If target not shown yet -> too early (log incorrect, advance trial)
+  // - If target shown -> record reaction_time (release), wait for click
+  centerCircle.addEventListener("mouseup", () => {
+    if (!holding) return;
+    holding = false;
+    clearTimeout(holdTimeout);
+    centerCircle.style.backgroundColor = "white";
+    centerCircle.style.border = "none";
+
+    if (!canClick) {
+      // Too early: no stimulus yet
+      showMessage("Too early!");
+      send({ is_correct: false });
+      trialIndex++;               // finalize this (failed) trial
+      resetTrial();
+      return;
+    }
+
+    // Valid release after stimulus
+    releaseAt = performance.now();
+    lastClick = releaseAt;
+    const rtLeave = releaseAt - stimOnsetAt;
+    // Map to server key expected by your live_method
+    send({ reaction_time: rtLeave });
+    // Don't increment trialIndex yet; we finalize on the target click
+  });
+
+  // Cancel trial if cursor leaves center while holding
+  centerCircle.addEventListener("mouseleave", () => {
+    if (!holding) return;
+    holding = false;
+    clearTimeout(holdTimeout);
+    centerCircle.style.backgroundColor = "white";
+    centerCircle.style.border = "none";
+    centerCircle.classList.remove("holding");
+    showMessage("Release your mouse");
+    // Treat as early cancel: log as incorrect and advance
+    send({ is_correct: false });
+    trialIndex++;
+    resetTrial();
+  });
+
+  // Click on one of the five targets
+  circleElements.forEach((circle, index) => {
+    circle.addEventListener("click", () => {
+      if (!canClick) {
+        showMessage("Not yet!");
+        return;
+      }
+
+      // If they haven't released the center yet, force an incorrect outcome
+      if (releaseAt == null) {
+        showMessage("Release first!");
+        send({ is_correct: false, clicked_index: index });
+        trialIndex++;
+        resetTrial();
+        return;
+      }
+
+      const correct = index === activeIndex;
+      const mt = performance.now() - lastClick; // movement time since release
+
+      showMessage(correct ? "Correct!" : "Wrong!");
+
+      // Finalize trial (send movement_time, correctness, clicked index)
+      send({
+        movement_time: mt,
+        is_correct: correct,
+        clicked_index: index
+      });
+      trialIndex++;
+
+      setTimeout(resetTrial, 500);
+    });
+  });
+
+  window.addEventListener("load", () => {
+      // Time in milliseconds (2 minutes)
+      const autoAdvanceMs = 2 * 60 * 1000;
+
+      setTimeout(() => {
+        document.getElementById("next-container").style.display = "block";
+      }, autoAdvanceMs);
+    });
+</script>
+
+</body>
+
+{{ formfields }} {{ endblock }}

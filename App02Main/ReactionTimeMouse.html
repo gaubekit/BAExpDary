@@ -1,0 +1,142 @@
+{{ block title }} Reaction Time + Movement Time {{ endblock }} {{ block content }}
+{% load otree static %}
+<link rel="stylesheet" href="{% static 'styles/assessment.css' %}" />
+
+<body>
+  <div class="circle-container">
+    <div class="circle-button" id="center-circle"></div>
+    <div class="circle-button" id="hold-button"></div>
+    <div id="message"></div>
+  </div>
+
+  <div id="next-container" style="display: none">
+    <p>{{ next_button }}</p>
+  </div>
+
+  <script>
+    // --- DOM References ---
+    const centerCircle = document.getElementById("center-circle");
+    const holdButton = document.getElementById("hold-button");
+    const message = document.getElementById("message");
+
+    // --- Trial State Variables ---
+    let isGreen = false;
+    let waiting = false;
+    let holding = false;
+    let canClick = false;
+    let trialIndex = 0;
+    let rtStartTime = 0;
+    let lastClick = performance.now();
+
+    // --- Timing Handles ---
+    let timeoutId = null;
+
+    /**
+     * Displays a feedback message below the buttons.
+     * @param {string} text - Message to display
+     */
+    function showMessage(text) {
+      message.innerText = text;
+      setTimeout(() => {
+        message.innerText = "";
+      }, 1000);
+    }
+
+    /**
+     * Starts a new trial after a random delay, showing green if still holding.
+     */
+    function startTrial() {
+      isGreen = false;
+      canClick = false;
+      waiting = true;
+      centerCircle.style.backgroundColor = "gray";
+
+      const delay = Math.random() * 3000 + 1000; // Random delay between 1–4s
+      timeoutId = setTimeout(() => {
+        if (holding) {
+          rtStartTime = performance.now();
+          centerCircle.style.backgroundColor = "#005000"; // Green = Go
+          isGreen = true;
+          waiting = false;
+          canClick = true;
+        }
+      }, delay);
+    }
+
+    /**
+     * Resets all trial-related state and visuals.
+     */
+    function resetTrial() {
+      clearTimeout(timeoutId);
+      isGreen = false;
+      waiting = false;
+      holding = false;
+      canClick = false;
+      centerCircle.style.backgroundColor = "gray";
+    }
+
+    // --- Event Listeners ---
+
+    // Start holding to initiate trial
+    holdButton.addEventListener("mousedown", () => {
+      if (holding) return;
+      holding = true;
+      holdButton.style.backgroundColor = "gray";
+      startTrial();
+    });
+
+    // Release to signal response
+    holdButton.addEventListener("mouseup", () => {
+      holding = false;
+      lastClick = performance.now();
+      const rtLeave = performance.now() - rtStartTime;
+
+      liveSend({ leave_time: rtLeave, trial_index: trialIndex });
+
+      if (!isGreen) {
+        showMessage("Too early!");
+        resetTrial();
+      }
+
+      holdButton.style.backgroundColor = "white";
+    });
+
+    // Click on center = response attempt
+    centerCircle.addEventListener("click", () => {
+      const rt = performance.now() - lastClick;
+
+      if (isGreen && canClick) {
+        liveSend({ response_time: rt, trial_index: trialIndex });
+        showMessage("Correct!");
+        resetTrial();
+      } else if (!isGreen && waiting) {
+        liveSend({ response_time: rt, trial_index: trialIndex });
+        showMessage("Too soon!");
+        resetTrial();
+      }
+
+      trialIndex++;
+    });
+
+    // Cancel if cursor leaves hold area mid-trial
+    holdButton.addEventListener("mouseleave", () => {
+      if (!holding) return;
+
+      holding = false;
+      clearTimeout(timeoutId);
+      holdButton.style.backgroundColor = "white";
+      showMessage("Release your mouse");
+    });
+
+    window.addEventListener("load", () => {
+      // Time in milliseconds (2 minutes)
+      const autoAdvanceMs = 2 * 60 * 1000;
+
+      setTimeout(() => {
+        document.getElementById("next-container").style.display = "block";
+      }, autoAdvanceMs);
+    });
+  </script>
+</body>
+
+{{ formfields }} {{ endblock }}

@@ -60,10 +60,10 @@ class Player(BasePlayer):
     ccpt_sd_rt_ms = models.IntegerField()
 
     # var for SART 5min
-    # TODO Dary: add your metrics
+    sart5_timings = models.LongStringField(blank=True, null=True)
 
     # var for SART 2min
-    # TODO Dary: add your metrics
+    sart2_timings = models.LongStringField(blank=True, null=True)
 
     # ----- Assessment Questionnaires ----- #
     # Note: Items identical to App02 and App03
@@ -273,13 +273,67 @@ class Intro(Page):  # TODO: only for testing reasons
 class Results(Page):  # TODO: only for testing reasons
     pass
 
+def add_timings(player, idx, updates: dict, field: str = 'timings_json'):
+    """
+    Append/merge per-trial timing data into a JSON-backed dictionary on the Player.
+
+    - Expects a JSON field on `player` (default: 'timings_json') that stores a dict of trial entries,
+      keyed by the trial index (string).
+    - Safely reads the existing JSON using `player.field_maybe_none(field)`:
+        - Parses JSON to a dict if present.
+        - Falls back to an empty dict on null/invalid/non-dict content.
+    - Ensures the entry for the given trial key exists and is a dict, then merges `updates`:
+        - Skips keys whose values are `None` (does not overwrite existing values with nulls).
+        - Writes the merged entry back under the trial key.
+    - Note: This helper updates the in-memory `store`; persisting back to the model
+      (e.g., `setattr(player, field, json.dumps(store))`) must be done by the caller
+      or elsewhere in the calling flow.
+    """
+    key = str(idx)
+
+    # safe read for nullable fields
+    raw = player.field_maybe_none(field)
+    try:
+        store = json.loads(raw) if raw else {}
+        if not isinstance(store, dict):
+            store = {}
+    except Exception:
+        store = {}
+
+    # merge (skip None values)
+    entry = store.get(key)
+    if not isinstance(entry, dict):
+        entry = {}
+    entry.update({k: v for k, v in updates.items() if v is not None})
+    store[key] = entry
+
+    # assign back 
+    setattr(player, field, json.dumps(store))
 
 class SustainedAttentionKeyboard5min(Page):
-    pass  # TODO Dary: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'reaction_time': data.get('reaction_time'),
+            'is_correct': data.get('is_correct'),
+            'trial_type': data.get('trial_type'),
+        }, field='sart5_timings')
 
 
 class SustainedAttentionKeyboard2min(Page):
-    pass  # TODO Dary: Your code goes here
+    @staticmethod
+    def live_method(player: Player, data):
+        idx = data.get('trial_index')
+        if idx is None:
+            return
+        add_timings(player, idx, {
+            'reaction_time': data.get('reaction_time'),
+            'is_correct': data.get('is_correct'),
+            'trial_type': data.get('trial_type'),
+        }, field='sart2_timings')
 
 
 page_sequence = [
@@ -295,8 +349,8 @@ page_sequence = [
     # Intro,  # TODO: outdated
     AssessmentTaskCCPT,
     # Results,  # TODO: only for testing
-    # SustainedAttentionKeyboard5min,  # TODO Dary
-    # SustainedAttentionKeyboard2min,  # TODO Dary
+     SustainedAttentionKeyboard5min,  # TODO Dary
+     SustainedAttentionKeyboard2min,  # TODO Dary
 
     EyesOpenCalibration,
 ]
