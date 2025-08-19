@@ -189,6 +189,7 @@ def add_timings(player, idx, updates: dict, field: str = 'timings_json'):
     # assign back 
     setattr(player, field, json.dumps(store))
 
+
 class Aim(Page):  # better name?
     @staticmethod
     def live_method(player: Player, data):
@@ -210,6 +211,7 @@ class ReactionTimeKeyboard(Page):
         add_timings(player, idx, {
             'reaction_time': data.get('reaction_time'),
         }, field='rt_timings')
+
 
 class ReactionTimeMouse(Page):
     @staticmethod
@@ -264,7 +266,6 @@ class ChoiceReactionTimeKeyboard(Page):
             'is_correct': data.get('is_correct'),
             'clicked_index': data.get('clicked_index'),
         }, field='crt_timings')
-
 
 
 class ChoiceReactionTimeMouse(Page):
@@ -434,13 +435,13 @@ class EyesOpenCalibrationC(Page):
 page_sequence = [
     # -- Assessment Block Tasks -- #
     # TODO: Activate assessment task pages in page_sequence
-    # Aim,
-    # ReactionTimeKeyboard,
-    # ReactionTimeMouse,
-    # SustainedAttentionKeyboard,
-    # SustainedAttentionMouse,
-    # ChoiceReactionTimeKeyboard,
-    # ChoiceReactionTimeMouse,
+    Aim,
+    ReactionTimeKeyboard,
+    ReactionTimeMouse,
+    SustainedAttentionKeyboard,
+    SustainedAttentionMouse,
+    ChoiceReactionTimeKeyboard,
+    ChoiceReactionTimeMouse,
 
     # -- Assessment Block Questionnaires --#
     MentalFatigueQuestionnaires,
