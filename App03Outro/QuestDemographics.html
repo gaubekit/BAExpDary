@@ -1,0 +1,151 @@
+{{ block title }}Stage 3: Additional Questionnaire{{ endblock }}
+
+{{ block content }}
+<style>
+.my-box {
+    border: 1px solid #ccc;
+    padding: 10px;
+    background-color: #f9f9f9;
+}
+.tooltip-icon {
+    display: inline-block;
+    margin-left: 6px;
+    color: #007bff;
+    cursor: pointer;
+    font-weight: bold;
+    border: 1px solid #007bff;
+    border-radius: 50%;
+    padding: 0 4px;
+    font-size: 12px;
+    position: relative;
+}
+.tooltip-icon:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 120%;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #333;
+    color: #fff;
+    padding: 6px 8px;
+    border-radius: 5px;
+    white-space: normal;
+    width: 220px;
+    font-size: 12px;
+    z-index: 10;
+}
+</style>
+
+<div class="my-box">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-md-12">
+        <div class="card border-0 shadow-sm mt-12" style="background-color: #f8f9fa;">
+          <div class="card-body">
+            <b>Please provide the following personal details:</b>
+
+            <!-- Age -->
+            {{ formfield 'age' }}
+
+            <!-- Gender -->
+            <div class="form-group">
+              <label for="genderSelect" class="control-label col-form-label">How do you identify?</label>
+              <div>
+                <select name="genderSelect" id="genderSelect" class="form-select" required>
+                  <option value="" selected disabled hidden>--------</option>
+                  <option value="1">Male</option>
+                  <option value="2">Female</option>
+                  <option value="3">Other</option>
+                </select>
+                <input name="gender" id="hidden_gender" value="0" type="hidden"/>
+              </div>
+            </div>
+            <div id="other_gender_specify_container" style="display:none;">
+              {{ formfield 'other_gender_specify' }}
+            </div>
+
+            <!-- Vision Problems -->
+            <div class="form-group">
+              <label for="visionSelect" class="control-label col-form-label">Do you have vision problems?</label>
+              <div>
+                <select name="visionSelect" id="visionSelect" class="form-select" required>
+                  <option value="" selected disabled hidden>--------</option>
+                  <option value="1">No</option>
+                  <option value="2">Yes</option>
+                </select>
+                <input name="vision_problems" id="hidden_vision" value="0" type="hidden"/>
+              </div>
+            </div>
+            <div id="yes_vision_specify_container" style="display:none;">
+              <label>
+                Please specify your vision problem
+                <span class="tooltip-icon" data-tooltip="Please describe your vision issue (e.g., color blindness, blurred vision).">&nbspi&nbsp</span>
+              </label>
+              {{ formfield 'yes_vision_specify' }}
+            </div>
+
+            <!-- Motor Problems -->
+            <div class="form-group">
+              <label for="motorSelect" class="control-label col-form-label">Do you have motor problems with your dominant hand?</label>
+              <div>
+                <select name="motorSelect" id="motorSelect" class="form-select" required>
+                  <option value="" selected disabled hidden>--------</option>
+                  <option value="1">No</option>
+                  <option value="2">Yes</option>
+                </select>
+                <input name="motor_problems" id="hidden_motor" value="0" type="hidden"/>
+              </div>
+            </div>
+            <div id="yes_motor_specify_container" style="display:none;">
+              <label>
+                Please specify your motor problem
+                <span class="tooltip-icon" data-tooltip="Please describe your motor issue (e.g., limited movement, tremor).">&nbspi&nbsp</span>
+              </label>
+              {{ formfield 'yes_motor_specify' }}
+            </div>
+
+            <!-- Gaming Frequency -->
+            {{ formfield 'gaming_frequency' }}
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<br>
+{{ next_button }}
+{{ endblock }}
+
+{{ block scripts }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Gender
+    const genderSelect = document.getElementById('genderSelect');
+    const genderHidden = document.getElementById('hidden_gender');
+    const otherGender = document.getElementById('other_gender_specify_container');
+    genderSelect.addEventListener('change', () => {
+        genderHidden.value = genderSelect.value;
+        otherGender.style.display = (genderSelect.value === "3") ? 'block' : 'none';
+    });
+
+    // Vision
+    const visionSelect = document.getElementById('visionSelect');
+    const visionHidden = document.getElementById('hidden_vision');
+    const yesVision = document.getElementById('yes_vision_specify_container');
+    visionSelect.addEventListener('change', () => {
+        visionHidden.value = visionSelect.value;
+        yesVision.style.display = (visionSelect.value === "2") ? 'block' : 'none';
+    });
+
+    // Motor
+    const motorSelect = document.getElementById('motorSelect');
+    const motorHidden = document.getElementById('hidden_motor');
+    const yesMotor = document.getElementById('yes_motor_specify_container');
+    motorSelect.addEventListener('change', () => {
+        motorHidden.value = motorSelect.value;
+        yesMotor.style.display = (motorSelect.value === "2") ? 'block' : 'none';
+    });
+});
+</script>
+{{ endblock }}

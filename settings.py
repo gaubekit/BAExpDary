@@ -2,6 +2,21 @@ from os import environ
 
 SESSION_CONFIGS = [
     dict(
+        name='ExpBeginToEnd',
+        app_sequence=[
+            'App00Welcome',
+            'App01Intro',
+            'App02Main',
+            'App03Outro'
+        ],
+        num_demo_participants=1,
+    ),
+    dict(
+        name='TestApp00',
+        app_sequence=['App00Welcome'],
+        num_demo_participants=1,
+    ),
+    dict(
         name='TestApp01',
         app_sequence=['App01Intro'],
         num_demo_participants=1,

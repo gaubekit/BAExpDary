@@ -5,7 +5,7 @@ import random, statistics, json
 doc = """
     This App is ment to get Calibrate EEG, Get Baseline Data For MFI, ZFE, VAS, and  EEG.
     Further, thus App checkes whether our SART in a 2min Evaluation is a valid representation of Sustained Attention:
-        - Playing an original CPT Task for 5min # Todo: not implemented yet
+        - Playing an original CPT Task for 5min
         - Playing Darys SART Task for 5min
         - Playing Darys SART Task for 2 min
         
@@ -93,7 +93,6 @@ class Player(BasePlayer):
     eeg_timestamp_ccpt_start, eeg_timestamp_ccpt_stop = models.StringField(), models.StringField()
 
 
-
 # HELP FUNCTIONS
 def make_trial_sequence():
     """
@@ -173,6 +172,44 @@ def compute_summary_from_results(player: Player):
     player.ccpt_sd_rt_ms = int(statistics.pstdev(rts)) if len(rts) > 1 else 0
 
 
+def add_timings(player, idx, updates: dict, field: str = 'timings_json'):
+    """
+    Append/merge per-trial timing data into a JSON-backed dictionary on the Player.
+
+    - Expects a JSON field on `player` (default: 'timings_json') that stores a dict of trial entries,
+      keyed by the trial index (string).
+    - Safely reads the existing JSON using `player.field_maybe_none(field)`:
+        - Parses JSON to a dict if present.
+        - Falls back to an empty dict on null/invalid/non-dict content.
+    - Ensures the entry for the given trial key exists and is a dict, then merges `updates`:
+        - Skips keys whose values are `None` (does not overwrite existing values with nulls).
+        - Writes the merged entry back under the trial key.
+    - Note: This helper updates the in-memory `store`; persisting back to the model
+      (e.g., `setattr(player, field, json.dumps(store))`) must be done by the caller
+      or elsewhere in the calling flow.
+    """
+    key = str(idx)
+
+    # safe read for nullable fields
+    raw = player.field_maybe_none(field)
+    try:
+        store = json.loads(raw) if raw else {}
+        if not isinstance(store, dict):
+            store = {}
+    except Exception:
+        store = {}
+
+    # merge (skip None values)
+    entry = store.get(key)
+    if not isinstance(entry, dict):
+        entry = {}
+    entry.update({k: v for k, v in updates.items() if v is not None})
+    store[key] = entry
+
+    # assign back
+    setattr(player, field, json.dumps(store))
+
+
 # PAGES
 
 # ----------------- Calibrating EEG ----------------- #
@@ -193,9 +230,6 @@ class EyesClosedCalibrationInitial(Page):  # TODO: Define "xx" time
     """
     form_model = 'player'
     form_fields = ['eeg_timestamp_ec_intro_start', 'eeg_timestamp_ec_intro_stop']
-
-    # TODO: play sound after xx seconds
-    # TODO: second-button: test "sound"
 
 
 # ----------------- Questionnaires (identical to App02) ----------------- #
@@ -264,52 +298,6 @@ class AssessmentTaskCCPT(Page):
         compute_summary_from_results(player)
 
 
-class Intro(Page):  # TODO: only for testing reasons
-    pass
-    # TODO: Integrate description into Task -> should be displayerd before clicking
-    #       "start" and disabled while the task is running
-
-
-class Results(Page):  # TODO: only for testing reasons
-    pass
-
-def add_timings(player, idx, updates: dict, field: str = 'timings_json'):
-    """
-    Append/merge per-trial timing data into a JSON-backed dictionary on the Player.
-
-    - Expects a JSON field on `player` (default: 'timings_json') that stores a dict of trial entries,
-      keyed by the trial index (string).
-    - Safely reads the existing JSON using `player.field_maybe_none(field)`:
-        - Parses JSON to a dict if present.
-        - Falls back to an empty dict on null/invalid/non-dict content.
-    - Ensures the entry for the given trial key exists and is a dict, then merges `updates`:
-        - Skips keys whose values are `None` (does not overwrite existing values with nulls).
-        - Writes the merged entry back under the trial key.
-    - Note: This helper updates the in-memory `store`; persisting back to the model
-      (e.g., `setattr(player, field, json.dumps(store))`) must be done by the caller
-      or elsewhere in the calling flow.
-    """
-    key = str(idx)
-
-    # safe read for nullable fields
-    raw = player.field_maybe_none(field)
-    try:
-        store = json.loads(raw) if raw else {}
-        if not isinstance(store, dict):
-            store = {}
-    except Exception:
-        store = {}
-
-    # merge (skip None values)
-    entry = store.get(key)
-    if not isinstance(entry, dict):
-        entry = {}
-    entry.update({k: v for k, v in updates.items() if v is not None})
-    store[key] = entry
-
-    # assign back 
-    setattr(player, field, json.dumps(store))
-
 class SustainedAttentionKeyboard5min(Page):
     @staticmethod
     def live_method(player: Player, data):
@@ -337,20 +325,17 @@ class SustainedAttentionKeyboard2min(Page):
 
 
 page_sequence = [
-    # Welcome, TODO: Some first page
-
-    # -- Questionnaires --#
+    # -- Questionnaires -- #
     EyesOpenCalibrationInitial,
     EyesClosedCalibrationInitial,
     MentalFatigueQuestionnaires,
     VisualAnalogousScales,
 
-    # -- Assessment  --#
-    # Intro,  # TODO: outdated
+    # -- Assessment  -- #
     AssessmentTaskCCPT,
-    # Results,  # TODO: only for testing
-     SustainedAttentionKeyboard5min,  # TODO Dary
-     SustainedAttentionKeyboard2min,  # TODO Dary
+    SustainedAttentionKeyboard5min,
+    SustainedAttentionKeyboard2min,
 
+    # -- EEG -- #
     EyesOpenCalibration,
 ]

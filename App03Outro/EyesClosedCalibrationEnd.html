@@ -1,0 +1,123 @@
+{% extends "global/Page.html" %}
+
+{% block title %}Eyes Closed Calibration{% endblock %}
+
+{% block content %}
+
+<style>
+  .my-box {
+    border: 1px solid #ccc;
+    padding: 40px 20px;
+    background-color: #f9f9f9;
+    max-width: 800px;
+    margin: 50px auto;
+    text-align: center;
+    font-family: sans-serif;
+  }
+
+  #screen {
+    font-size: 200px;
+    font-weight: bold;
+    text-align: center;
+    display: none;              /* initially hidden */
+    align-items: center;
+    justify-content: center;
+    height: 300px;
+    margin-bottom: 20px;
+    user-select: none;
+  }
+
+  #screen img {
+    max-height: 250px;
+  }
+
+  .instruction {
+    font-size: 22px;
+    color: #444;
+    margin-top: 20px;
+  }
+
+  button {
+    font-size: 18px;
+    padding: 10px 20px;
+    margin-top: 10px;
+  }
+</style>
+
+<div class="my-box">
+  <!-- Screen where the image will be displayed -->
+  <div id="screen">
+    <img src="{% static 'eyes_closed.png' %}" alt="Closed Eyes">
+  </div>
+
+  <!-- Intro text with test sound button -->
+  <div class="instruction" id="outroText">
+    After clicking the <b>"Start Calibration"</b> button, an image illustrating closed eyes will appear on the screen for <b>{{ C.EEG_EYES_CLOSED_END }}</b> seconds.
+    For EEG calibration, please keep your eyes closed, relax, and avoid any movement (body, eyes, etc.) during this time until you hear a gong sound.<br><br>
+    To make sure your audio is working correctly, you can test it first with the "Test Sound"-button:
+    <br><br>
+    <button id="testSoundBtn" type="button"> Test Sound </button>
+
+    <br><br><br>
+    Please click the button below to start the calibration: <br><br>
+    <!-- Start Button -->
+    <button id="startBtn" type="button">Start Calibration</button>
+  </div>
+
+  <!-- End text (initially hidden) -->
+  <div class="instruction" id="endText" style="display: none;">
+    The calibration period is complete. You can proceed to the next page.
+    <br><br>
+
+    <!-- Next button (initially hidden) -->
+    <button type="submit" id="nextBtn" style="display: none;">Next</button>
+  </div>
+
+  <!-- Hidden fields for EEG timestamps -->
+  <input type="hidden" name="eeg_timestamp_ec_outro_start" id="eegTimestampStart">
+  <input type="hidden" name="eeg_timestamp_ec_outro_stop" id="eegTimestampStop">
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const screen = document.getElementById('screen');
+const outroText = document.getElementById('outroText');
+const endText = document.getElementById('endText');
+const gongSound = new Audio("{% static 'gong.mp3' %}");
+
+// Test sound button
+document.getElementById('testSoundBtn').addEventListener('click', function () {
+    gongSound.play();
+});
+
+// Start calibration
+document.getElementById('startBtn').addEventListener('click', function () {
+    // 1. Hide start button and outro
+    this.style.display = 'none';
+    outroText.style.display = 'none';
+
+    // 2. Record EEG start timestamp
+    const startTimestamp = new Date().toISOString();
+    document.getElementById('eegTimestampStart').value = startTimestamp;
+
+    // 3. Show image immediately
+    screen.style.display = 'flex';
+
+    // 4. After EEG_EYES_CLOSED_END seconds: hide image, play gong, record stop timestamp, show end instruction and Next button
+    setTimeout(function () {
+        screen.style.display = 'none';
+
+        gongSound.play();
+
+        const stopTimestamp = new Date().toISOString();
+        document.getElementById('eegTimestampStop').value = stopTimestamp;
+
+        endText.style.display = 'block';
+        document.getElementById('nextBtn').style.display = 'inline-block';
+    }, {{ C.EEG_EYES_CLOSED_END }} * 1000);
+});
+</script>
+{% endblock %}

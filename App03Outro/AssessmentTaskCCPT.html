@@ -1,0 +1,153 @@
+{{ block title }} Cognitive Assessment {{ endblock }}
+{{ block content }}
+
+<style>
+  body {
+    margin: 0;
+    background-color: #ffffff;
+    font-family: sans-serif;
+  }
+
+  .my-box {
+    border: 1px solid #ccc;
+    padding: 40px 20px;
+    background-color: #f9f9f9;
+    max-width: 800px;
+    margin: 50px auto;
+    text-align: center;
+  }
+
+  #screen {
+    font-size: 200px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 300px;
+    margin-bottom: 20px;
+    user-select: none;
+    display: none; /* initially hidden */
+  }
+
+  .instruction, .short-info {
+    font-size: 22px;
+    color: #444;
+    margin-top: 20px;
+  }
+
+  .short-info {
+    display: none; /* initially hidden */
+  }
+
+  #startBtn {
+    margin-top: 30px;
+    padding: 10px 30px;
+    font-size: 18px;
+  }
+</style>
+
+<div class="my-box">
+  <!-- Initial instruction + Start button -->
+  <div id="task-instruction" class="instruction">
+    In this task, letters will appear on the screen. Press the <b>Space</b> key as quickly as possible for each letter, but <b>do not</b> press for a specific “No-Go” letter. The task will start when you click the button below.
+  </div>
+  <button id="startBtn" type="button">Start Task</button>
+
+  <!-- Letter display -->
+  <div id="screen"></div>
+
+  <!-- Short info under letters -->
+  <div class="short-info">
+    Press the <b>Space</b> key as soon as you see a letter – <b>but not</b> for „{{ C.NO_GO_LETTER }}“.
+  </div>
+
+  <!-- Hidden fields -->
+  <input type="hidden" name="ccpt_results_json" id="ccpt_results_json">
+  <input type="hidden" name="eeg_timestamp_ccpt_start" id="eeg_timestamp_ccpt_start">
+  <input type="hidden" name="eeg_timestamp_ccpt_stop" id="eeg_timestamp_ccpt_stop">
+</div>
+
+<script>
+  const STIM_MS = {{ STIM_DURATION_MS|json }};
+  const RESPONSE_KEY = {{ RESPONSE_KEY|json }};
+  const TRIALS = {{ TRIALS|json }};
+
+  const screen = document.getElementById('screen');
+  const results = [];
+  let trialIndex = 0;
+  let awaitingResponse = false;
+  let trialStart = 0;
+  let responseCaptured = false;
+
+  function now(){ return performance.now(); }
+
+  function showStim(letter){
+    screen.textContent = letter;
+  }
+
+  function runTrial(){
+    if(trialIndex >= TRIALS.length){
+      finishTask();
+      return;
+    }
+    const tr = TRIALS[trialIndex];
+    responseCaptured = false;
+    awaitingResponse = true;
+    showStim(tr.letter);
+    trialStart = now();
+
+    setTimeout(()=>{
+      screen.textContent = '';
+      awaitingResponse = false;
+      if(!responseCaptured){
+        results.push({
+          letter: tr.letter, is_no_go: tr.is_no_go,
+          isi_ms: tr.isi_ms, responded: false
+        });
+      }
+      setTimeout(()=>{
+        trialIndex += 1;
+        runTrial();
+      }, tr.isi_ms - STIM_MS);
+    }, STIM_MS);
+  }
+
+  function finishTask(){
+    document.getElementById('ccpt_results_json').value = JSON.stringify(results);
+    document.getElementById('eeg_timestamp_ccpt_stop').value = new Date().toISOString();
+    document.querySelector('form').submit();
+  }
+
+  // Start-Button logic
+  document.getElementById('startBtn').addEventListener('click', function() {
+    // hide instruction + button
+    document.getElementById('task-instruction').style.display = 'none';
+    this.style.display = 'none';
+
+    // show letter area + short info
+    screen.style.display = 'flex';
+    document.querySelector('.short-info').style.display = 'block';
+
+    // save start timestamp
+    document.getElementById('eeg_timestamp_ccpt_start').value = new Date().toISOString();
+
+    // start task AFTER onset-onset of first trial
+    setTimeout(runTrial, TRIALS[0].isi_ms);
+  });
+
+  // keypress listener
+  window.addEventListener('keydown', ev=>{
+    if(awaitingResponse && !responseCaptured && ev.code === "Space"){
+      responseCaptured = true;
+      const rt = now() - trialStart;
+      const tr = TRIALS[trialIndex];
+      results.push({
+        letter: tr.letter, is_no_go: tr.is_no_go,
+        isi_ms: tr.isi_ms, responded: true,
+        rt_ms: Math.round(rt)
+      });
+    }
+  });
+</script>
+
+{{ endblock }}
