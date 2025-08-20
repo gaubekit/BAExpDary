@@ -1,112 +1,110 @@
-{{ block title }}
-Reaction Time
-{{ endblock }}
-{{ block content }}
-
-{% load otree static %}
+{{ block title }} Reaction Time {{ endblock }} {{ block content }} {% load otree static %}
 <link rel="stylesheet" href="{% static 'styles/assessment.css' %}" />
 
-<body>
+<div class="task-container">
+  <p class="task-description">
+    Press the "3" key as soon as the circle turns green. Do not press it too
+    early.
+  </p>
+
   <div class="circle-container">
     <div class="circle-button" id="center-circle"></div>
     <div id="message"></div>
   </div>
+</div>
 
-  <div id="next-container" style="display: none">
-      <p>{{ next_button }}</p>
-  </div>
-  
-  <script>
-    // --- DOM References ---
-    const centerCircle = document.getElementById("center-circle");
-    const message = document.getElementById("message");
+<div id="next-container" style="display: none">
+  <p>{{ next_button }}</p>
+</div>
 
-    // --- State Variables ---
-    let isGreen = false;
-    let waiting = false;
-    let timeoutId = null;
-    let stimulusShownAt = null;
-    let trialIndex = 0;
+<script>
+  // --- DOM References ---
+  const centerCircle = document.getElementById("center-circle");
+  const message = document.getElementById("message");
 
-    /**
-     * Displays a short feedback message below the circle.
-     * @param {string} text - Message to display
-     */
-    function showMessage(text) {
-      message.innerText = text;
-      centerCircle.innerText = "";
-      setTimeout(() => {
-        message.innerText = "";
-      }, 1000); // Message visible for 1s
-    }
+  // --- State Variables ---
+  let isGreen = false;
+  let waiting = false;
+  let timeoutId = null;
+  let stimulusShownAt = null;
+  let trialIndex = 0;
 
-    /**
-     * Starts a new trial: waits, then turns the circle green.
-     */
-    function startTrial() {
+  /**
+   * Displays a short feedback message below the circle.
+   * @param {string} text - Message to display
+   */
+  function showMessage(text) {
+    message.innerText = text;
+    centerCircle.innerText = "";
+    setTimeout(() => {
+      message.innerText = "";
+    }, 1000); // Message visible for 1s
+  }
+
+  /**
+   * Starts a new trial: waits, then turns the circle green.
+   */
+  function startTrial() {
+    isGreen = false;
+    waiting = true;
+    stimulusShownAt = null;
+    centerCircle.style.backgroundColor = "gray";
+
+    const delay = Math.random() * 3000 + 1000; // Random delay between 1–4s
+    timeoutId = setTimeout(() => {
+      centerCircle.style.backgroundColor = "#005000"; // Green = go
+      centerCircle.innerText = "3";
+      isGreen = true;
+      waiting = false;
+      stimulusShownAt = performance.now();
+    }, delay);
+  }
+
+  /**
+   * Handles participant's response via click or key.
+   * Sends RT if correct or gives early warning.
+   */
+  function handleClick() {
+    if (waiting && !isGreen) {
+      clearTimeout(timeoutId);
+      showMessage("Too soon!");
+      startTrial(); // Restart trial on premature click
+    } else if (isGreen) {
+      const rt = performance.now() - stimulusShownAt;
+      showMessage("Correct!");
+      liveSend({
+        trial_index: trialIndex,
+        reaction_time: rt.toFixed(2),
+      });
+      trialIndex++;
       isGreen = false;
-      waiting = true;
-      stimulusShownAt = null;
       centerCircle.style.backgroundColor = "gray";
 
-      const delay = Math.random() * 3000 + 1000; // Random delay between 1–4s
-      timeoutId = setTimeout(() => {
-        centerCircle.style.backgroundColor = "#005000"; // Green = go
-        centerCircle.innerText = "3";
-        isGreen = true;
-        waiting = false;
-        stimulusShownAt = performance.now();
-      }, delay);
+      // Begin next trial after a short delay
+      setTimeout(startTrial, 1000);
     }
+  }
 
-    /**
-     * Handles participant's response via click or key.
-     * Sends RT if correct or gives early warning.
-     */
-    function handleClick() {
-      if (waiting && !isGreen) {
-        clearTimeout(timeoutId);
-        showMessage("Too soon!");
-        startTrial(); // Restart trial on premature click
-      } else if (isGreen) {
-        const rt = performance.now() - stimulusShownAt;
-        showMessage("Correct!");
+  // --- Event Listeners ---
 
-        liveSend({
-          trial_index: trialIndex,
-          reaction_time: rt.toFixed(2),
-        });
-
-        trialIndex++;
-        isGreen = false;
-        centerCircle.style.backgroundColor = "gray";
-
-        // Begin next trial after a short delay
-        setTimeout(startTrial, 1000);
-      }
+  // Respond to keyboard input ("3" key)
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "3") {
+      handleClick();
     }
+  });
 
-    // --- Event Listeners ---
+  // --- Begin Experiment ---
+  startTrial();
 
-    // Respond to keyboard input ("3" key)
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "3") {
-        handleClick();
-      }
-    });
+  window.addEventListener("load", () => {
+    // Time in milliseconds (2 minutes)
+    const autoAdvanceMs = 2 * 60 * 1000;
 
-    // --- Begin Experiment ---
-    startTrial();
-
-    window.addEventListener("load", () => {
-      // Time in milliseconds (2 minutes)
-      const autoAdvanceMs = 2 * 60 * 1000;
-
-      setTimeout(() => {
-        document.getElementById("next-container").style.display = "block";
-      }, autoAdvanceMs);
-    });
-  </script>
-</body>
+    setTimeout(() => {
+      document.getElementById("next-container").style.display = "block";
+    }, autoAdvanceMs);
+  });
+</script>
 
 {{ formfields }} {{ endblock }}

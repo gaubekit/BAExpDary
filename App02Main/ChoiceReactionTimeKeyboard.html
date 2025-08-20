@@ -1,68 +1,88 @@
-{{ block title }} Choice Reaction Time with One Color {{ endblock }} {{ block
-content }}
+{{ block title }} Choice Reaction Time (Keyboard) {{ endblock }} {{ block
+content }} {% load otree static %}
+<link rel="stylesheet" href="{% static 'styles/assessment.css' %}" />
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Choice Reaction Task</title>
-  <style>
-    body {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      background-color: #f0f0f0;
-    }
+<style>
+  /* Center the oTree page title */
+  .otree-title,
+  .otree-title h1 {
+    text-align: center;
+  }
 
-    .circle-container {
-      position: relative;
-      width: 400px;
-      height: 400px;
-    }
+  /* Block + text centering */
+  .task-container {
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  .task-description {
+    margin: 4px 0 8px;
+    color: #333;
+  }
 
-    .circle-button {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-size: 24px;
-      font-weight: bold;
-      color: #000;
-      border: 1px solid #333;
-      background-color: gray;
-      cursor: pointer;
-      position: absolute;
-      user-select: none;
-    }
+  /* Arena sized to comfortably fit D = 280 px and 60 px targets */
+  .circle-container {
+    position: relative;
+    width: 720px;
+    height: 560px;
+    margin: 8px auto 0;
+  }
 
-    #center-circle {
-      top: 300px;
-      left: 170px;
-      width: 60px;
-      height: 60px;
-      background-color: white;
-      border: none;
-      cursor: default;
-      pointer-events: none;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-weight: bold;
-      font-size: 12px;
-      color: black;
-      text-align: center;
-    }
+  .circle-button {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 24px;
+    font-weight: bold;
+    color: #000;
+    border: 1px solid #333;
+    background-color: gray;
+    cursor: pointer;
+    position: absolute;
+    user-select: none;
+  }
 
-    .circle-button.active {
-      background-color: #005000;
-    }
-  </style>
-</head>
+  /* Center circle fixed at the BOTTOM center of the arena */
+  #center-circle {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    background: white;
+    border: 1px solid #333;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    pointer-events: none; cursor: default;
 
-<body>
-  <div class="circle-container">
+    /* kill inherited rules to fix shifted center circle */
+    transform: none;
+    bottom: auto; right: auto;
+    top: 0; left: 0; 
+  }
+
+  /* Stimulus highlight */
+  .circle-button.active {
+    background-color: #005000;
+  }
+
+  /* NEXT button sits below the task block */
+  #next-container {
+    display: none;
+    text-align: center;
+    margin-top: 24px;
+  }
+</style>
+
+<div class="task-container">
+  <p class="task-description">
+    Press the number key (1–5) that matches the circle that turns green, as
+    quickly as possible.
+  </p>
+
+  <div class="circle-container" id="arena">
     <div class="circle-button" id="circle1">1</div>
     <div class="circle-button" id="circle2">2</div>
     <div class="circle-button" id="circle3">3</div>
@@ -70,148 +90,149 @@ content }}
     <div class="circle-button" id="circle5">5</div>
     <div class="circle-button" id="center-circle"></div>
   </div>
+</div>
 
-  <div id="next-container" style="display: none">
-      <p>{{ next_button }}</p>
-  </div>
+<!-- NEXT button OUTSIDE the arena -->
+<div id="next-container" style="display: none">
+  {{ next_button }}
+</div>
 
-  <script>
-    // --- DOM References ---
-    const circleElements = [
-      document.getElementById("circle1"),
-      document.getElementById("circle2"),
-      document.getElementById("circle3"),
-      document.getElementById("circle4"),
-      document.getElementById("circle5"),
-    ];
-    const centerCircle = document.getElementById("center-circle");
+<script>
+  // --- DOM References ---
+  const arena = document.getElementById("arena");
+  const circleElements = [
+    document.getElementById("circle1"),
+    document.getElementById("circle2"),
+    document.getElementById("circle3"),
+    document.getElementById("circle4"),
+    document.getElementById("circle5"),
+  ];
+  const centerCircle = document.getElementById("center-circle");
 
-    // --- Circle Layout Configuration ---
-    const centerX = 200;
-    const centerY = 330;
-    const radius = 160;
-    const angleOffset = Math.PI / 2;
-    const spread = Math.PI / 1.3;
-    const startAngle = angleOffset - spread / 2;
+  // --- Geometry (exact distance) ---
+  const W = 60; // px, circle diameter
+  const D = 280; // px, REQUIRED center-to-center distance to all targets
 
-    // Position circles in a fan-like arc
-    const circles = [...circleElements].reverse();
-    circles.forEach((circle, i) => {
-      const angle = startAngle + (i * spread) / (circles.length - 1);
-      const x = centerX + radius * Math.cos(angle) - 30;
-      const y = centerY - radius * Math.sin(angle) - 30;
-      circle.style.left = `${x}px`;
-      circle.style.top = `${y}px`;
+  /**
+   * Layout: places the center circle at bottom-center and positions
+   * circles 1–5 on an arc above it, all exactly D px away from center.
+   */
+  function layoutCircles() {
+    const rect = arena.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height - W / 2 - 24; // keep a 24px bottom gap
+
+    // Anchor the center circle (CSS does horizontal centering already)
+    centerCircle.style.left = centerX - W / 2 + "px";
+    centerCircle.style.top = centerY - W / 2 + "px";
+
+    // Slightly tighter arc than before (135°)
+    const spread = Math.PI * 0.75; // 135°
+    const angleOffset = Math.PI / 2; // 90° straight up
+    const startAngle = angleOffset + spread / 2; // leftmost
+    const step = -spread / (circleElements.length - 1); // go left→right
+
+    circleElements.forEach((circle, i) => {
+      const angle = startAngle + i * step;
+      const x = centerX + D * Math.cos(angle) - W / 2;
+      const y = centerY - D * Math.sin(angle) - W / 2;
+      circle.style.left = x + "px";
+      circle.style.top = y + "px";
+    });
+  }
+
+  // Initial layout + keep it robust on resize
+  layoutCircles();
+  window.addEventListener("resize", layoutCircles);
+
+  // --- Trial State Variables ---
+  let activeIndex = -1;
+  let trialIndex = 0;
+  let stimulusTime = null;
+  let timeoutId = null;
+
+  /**
+   * Displays a short feedback message in the center circle.
+   * @param {string} text - Message to display
+   */
+  function showMessage(text) {
+    centerCircle.innerText = text;
+    setTimeout(() => {
+      centerCircle.innerText = "";
+    }, 1000); // 1s duration
+  }
+
+  /**
+   * Returns a random index from 0 to the number of circles - 1.
+   * @returns {number}
+   */
+  function getRandomIndex() {
+    return Math.floor(Math.random() * circleElements.length);
+  }
+
+  /**
+   * Highlights a random circle after a random delay (1–4s).
+   * Also records the time the stimulus appeared.
+   */
+  function highlightRandomCircle() {
+    if (activeIndex !== -1) {
+      circleElements[activeIndex].classList.remove("active");
+    }
+
+    activeIndex = getRandomIndex();
+    const delay = Math.random() * 3000 + 1000;
+
+    timeoutId = setTimeout(() => {
+      circleElements[activeIndex].classList.add("active");
+      stimulusTime = performance.now();
+    }, delay);
+  }
+
+  /**
+   * Records the user's response data and sends it via liveSend.
+   * @param {number} index - The index of the clicked or pressed circle
+   */
+  function recordReaction(index) {
+    const responseTime = performance.now() - stimulusTime;
+
+    liveSend({
+      trial_index: trialIndex,
+      clicked_index: index,
+      is_correct: index === activeIndex,
+      reaction_time: responseTime.toFixed(2),
     });
 
-    // --- Trial State Variables ---
-    let activeIndex = -1;
-    let trialIndex = 0;
-    let stimulusTime = null;
-    let timeoutId = null;
+    trialIndex++;
+  }
 
-    /**
-     * Displays a short feedback message in the center circle.
-     * @param {string} text - Message to display
-     */
-    function showMessage(text) {
-      centerCircle.innerText = text;
-      setTimeout(() => {
-        centerCircle.innerText = "";
-      }, 1000); // 1s duration
-    }
+  // --- Event Listeners (Keyboard-Based) ---
+  document.addEventListener("keydown", (e) => {
+    const key = parseInt(e.key, 10);
+    if (!isNaN(key) && key >= 1 && key <= 5) {
+      const index = key - 1;
 
-    /**
-     * Returns a random index from 0 to the number of circles - 1.
-     * @returns {number}
-     */
-    function getRandomIndex() {
-      return Math.floor(Math.random() * circleElements.length);
-    }
-
-    /**
-     * Highlights a random circle after a random delay (1–4s).
-     * Also records the time the stimulus appeared.
-     */
-    function highlightRandomCircle() {
-      if (activeIndex !== -1) {
-        circleElements[activeIndex].classList.remove("active");
+      if (index === activeIndex) {
+        clearTimeout(timeoutId);
+        showMessage("Correct!");
+      } else {
+        showMessage("Wrong!");
       }
 
-      activeIndex = getRandomIndex();
-      const delay = Math.random() * 3000 + 1000;
-
-      timeoutId = setTimeout(() => {
-        circleElements[activeIndex].classList.add("active");
-        stimulusTime = performance.now();
-      }, delay);
+      recordReaction(index);
+      highlightRandomCircle();
     }
+  });
 
-    /**
-     * Records the user's response data and sends it via liveSend.
-     * @param {number} index - The index of the clicked or pressed circle
-     */
-    function recordReaction(index) {
-      const responseTime = performance.now() - stimulusTime;
+  // --- Start First Trial ---
+  highlightRandomCircle();
 
-      liveSend({
-        trial_index: trialIndex,
-        clicked_index: index,
-        is_correct: index === activeIndex,
-        reaction_time: responseTime.toFixed(2),
-      });
-
-      trialIndex++;
-    }
-
-    /*
-    // --- Event Listeners (Mouse-Based) ---
-    // Uncomment this section if you want to allow mouse clicks
-    
-    circleElements.forEach((circle, index) => {
-      circle.addEventListener('click', () => {
-        if (index === activeIndex) {
-          showMessage('Correct!');
-        } else {
-          showMessage('Wrong!');
-        }
-        recordReaction(index);
-        highlightRandomCircle();
-      });
-    });
-    */
-
-    // --- Event Listeners (Keyboard-Based) ---
-
-    document.addEventListener("keydown", (e) => {
-      const key = parseInt(e.key);
-      if (!isNaN(key) && key >= 1 && key <= 5) {
-        const index = key - 1;
-
-        if (index === activeIndex) {
-          clearTimeout(timeoutId);
-          showMessage("Correct!");
-        } else {
-          showMessage("Wrong!");
-        }
-
-        recordReaction(index);
-        highlightRandomCircle();
-      }
-    });
-
-    // --- Start First Trial ---
-    highlightRandomCircle();
-
-    window.addEventListener("load", () => {
-      // Time in milliseconds (2 minutes)
-      const autoAdvanceMs = 2 * 60 * 1000;
-
-      setTimeout(() => {
-        document.getElementById("next-container").style.display = "block";
-      }, autoAdvanceMs);
-    });
-  </script>
-</body>
+  window.addEventListener("load", () => {
+    // Time in milliseconds (2 minutes)
+    const autoAdvanceMs = 2 * 60 * 1000;
+    setTimeout(() => {
+      document.getElementById("next-container").style.display = "block";
+    }, autoAdvanceMs);
+  });
+</script>
 
 {{ formfields }} {{ endblock }}

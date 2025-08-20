@@ -434,7 +434,6 @@ class EyesOpenCalibrationC(Page):
 
 page_sequence = [
     # -- Assessment Block Tasks -- #
-    # TODO: Activate assessment task pages in page_sequence
     Aim,
     ReactionTimeKeyboard,
     ReactionTimeMouse,

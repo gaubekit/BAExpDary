@@ -1,286 +1,449 @@
-{{ block title }} SART MT {{ endblock }} {{ block content }} {% load otree
-static %}
+{{ block title }} SART with mouse {{ endblock }}
+{{ block content }}
+{% load otree static %}
 <link rel="stylesheet" href="{% static 'styles/assessment.css' %}" />
 
-<body>
+<!-- Container for title + description + arena -->
+<div class="task-container">
+  <!-- Brief task description under the title -->
+  <p class="task-description">
+    Hold the lower circle to start. When the center turns any color <em>except</em>
+    <span style="color:#005000;">dark green</span>, release and click the center as fast as you can.
+    When it turns <span style="color:#005000;">dark green</span>, keep holding and do not click.
+  </p>
+
+  <!-- Stimulus arena -->
   <div class="circle-container">
     <div class="circle-button" id="center-circle"></div>
     <div class="circle-button" id="hold-button"></div>
     <div id="message"></div>
   </div>
+</div>
 
-  <div id="next-container" style="display: none">
-    <p>{{ next_button }}</p>
-  </div>
+<!-- NEXT button centered below the task block -->
+<div id="next-container" style="display: none">
+  {{ next_button }}
+</div>
 
-  <script>
-    // --- DOM References ---
-    const centerCircle = document.getElementById("center-circle");
-    const holdButton = document.getElementById("hold-button");
-    const message = document.getElementById("message");
+<script>
+  /**
+   * SART MT — Sustained Attention to Response Task (Mouse + Timing)
+   *
+   * Summary
+   * -------
+   * Implements a Go/No-Go SART where participants:
+   *   1) press-and-hold a “hold” button to arm a trial,
+   *   2) on GO trials: release the hold after the stimulus appears and then click the center circle,
+   *   3) on No-Go (dark green) trials: withhold any release/click.
+   *
+   * UI / DOM
+   * --------
+   * - #center-circle  : stimulus circle; its background color defines trial type.
+   * - #hold-button    : press-and-hold area to start/arm trials and register releases.
+   * - #message        : transient feedback text (“Correct!”, “Wrong!”, “Too early!”, etc.).
+   * - #next-container : container revealing {{ next_button }} after a delay (placed below arena).
+   *
+   * Stimulus & Rules
+   * ----------------
+   * - colors = ["#FFCC00", "#90D050", "#3C5DAE", "#7A8DBE", "#005000"].
+   * - "#005000" (dark green) denotes a No-Go trial; all others are Go trials.
+   * - GO: correct sequence = release (RT measured to release) → click center (movement time).
+   * - No-Go: correct behavior = no release and no click during the response window.
+   *
+   * Timing (ms)
+   * -----------
+   * - INITIAL_DELAY_BEFORE_STIM : 2000   (after hold begins, before a color appears)
+   * - TRIAL_WINDOW              : 2000   (response window after stimulus onset)
+   * - FEEDBACK_DURATION         : 1000   (feedback text display time)
+   * - NEXT_REVEAL_DELAY         : 120000 (2 minutes; reveal Next button)
+   *
+   * State Variables
+   * ---------------
+   * - currentColor       : currently displayed stimulus color.
+   * - isGreen            : boolean; true if currentColor is No-Go green.
+   * - currentTrialType   : "go" | "nogo".
+   * - showingFeedback    : blocks input while feedback is shown.
+   * - cycleStarted       : indicates an active trial cycle.
+   * - trialIndex         : 0-based trial counter.
+   * - stimulusShownAt    : performance.now() at stimulus onset.
+   * - releaseAt          : timestamp of hold release (null if none).
+   * - awaitingClick      : true after a valid GO release until center click.
+   * - holding            : true while mouse is down on #hold-button.
+   * - timeoutId, initialTimeout : response and pre-stimulus timers.
+   *
+   * Data Logging (liveSend payloads)
+   * --------------------------------
+   * See typedefs below. Server-side oTree live_method should persist trial-indexed records.
+   */
 
-    // --- Configuration ---
-    const colors = ["#FFCC00", "#90D050", "#3C5DAE", "#7A8DBE", "#005000"]; // #005000 = green (No-Go)
+  /** @typedef {"go"|"nogo"} TrialType */
 
-    // --- Trial State Variables ---
-    let currentColor = "";
-    let isGreen = false;
-    let currentTrialType = null;           // "go" | "nogo"
-    let showingFeedback = false;
-    let cycleStarted = false;
-    let trialIndex = 0;
+  /**
+   * Outcome payload emitted at the end of a trial window or upon definitive action.
+   * @typedef {Object} TrialOutcomePayload
+   * @property {number} trial_index
+   * @property {TrialType} trial_type
+   * @property {boolean|null} is_correct
+   * @property {number|null} reaction_time  // ms; GO: release - onset; NOGO commission: click/release - onset
+   * @property {number|null} movement_time  // ms; GO correct only: click - release
+   * @property {"commission"|"omission"|"no_click"|"no_release"|null} error_type
+   */
 
-    let stimulusShownAt = 0;
-    let releaseAt = null;
-    let awaitingClick = false;
-    let holding = false;
+  /**
+   * Progress payload emitted on GO release (before the center click).
+   * @typedef {Object} GoReleaseProgress
+   * @property {number} trial_index
+   * @property {"go"} trial_type
+   * @property {number} leave_time // ms from stimulus onset to release
+   */
 
-    // --- Timing Handles ---
-    let timeoutId = null;
-    let initialTimeout = null;
+  // --- DOM References ---
+  const centerCircle = document.getElementById("center-circle");
+  const holdButton = document.getElementById("hold-button");
+  const message = document.getElementById("message");
 
-    // --- Visual helper ---
-    function setHoldVisual(isHolding) {
-      holdButton.style.backgroundColor = isHolding ? "gray" : "white";
-    }
+  // --- Configuration ---
+  /** Stimulus palette; "#005000" is the No-Go color. */
+  const colors = ["#FFCC00", "#90D050", "#3C5DAE", "#7A8DBE", "#005000"]; // #005000 = green (No-Go)
 
-    // --- Helpers ---
-    function resetFlags() {
-      isGreen = false;
-      currentTrialType = null;
-      stimulusShownAt = 0;
-      releaseAt = null;
-      awaitingClick = false;
-    }
+  // --- Trial State Variables ---
+  let currentColor = "";
+  let isGreen = false;
+  /** @type {TrialType|null} */
+  let currentTrialType = null;
+  let showingFeedback = false;
+  let cycleStarted = false;
+  let trialIndex = 0;
 
-    function startTrial() {
-      cycleStarted = true;
-      resetFlags();
-      centerCircle.style.backgroundColor = "gray";
-      centerCircle.innerText = "";
+  /** @type {number} timestamp at stimulus onset (performance.now) */
+  let stimulusShownAt = 0;
+  /** @type {number|null} timestamp at release */
+  let releaseAt = null;
+  let awaitingClick = false;
+  let holding = false;
 
-      clearTimeout(initialTimeout);
-      clearTimeout(timeoutId);
+  // --- Timing Handles ---
+  /** @type {number|null} window.setTimeout id for response window */
+  let timeoutId = null;
+  /** @type {number|null} window.setTimeout id for pre-stimulus delay */
+  let initialTimeout = null;
 
-      initialTimeout = setTimeout(startColorCycle, 2000);
-    }
+  /**
+   * Toggle the visual state of the hold button.
+   * @param {boolean} isHolding - true to show "holding" (gray); false for idle (white).
+   */
+  function setHoldVisual(isHolding) {
+    holdButton.style.backgroundColor = isHolding ? "gray" : "white";
+  }
 
-    function startColorCycle() {
-      showNextStimulus();
-    }
+  /**
+   * Reset per-trial flags (but do not change the trial counter or 'holding').
+   * Clears trial type and all timing markers.
+   */
+  function resetFlags() {
+    isGreen = false;
+    currentTrialType = null;
+    stimulusShownAt = 0;
+    releaseAt = null;
+    awaitingClick = false;
+  }
 
-    function showNextStimulus() {
-      if (showingFeedback || !cycleStarted) return;
+  /**
+   * Begin a new trial cycle: reset flags, show gray stimulus, and schedule stimulus onset.
+   * Preconditions:
+   * - User is currently holding the hold-button.
+   * Side effects:
+   * - Clears timers, sets `cycleStarted=true`, arms pre-stimulus timeout (2000ms).
+   */
+  function startTrial() {
+    cycleStarted = true;
+    resetFlags();
+    centerCircle.style.backgroundColor = "gray";
+    centerCircle.innerText = "";
 
-      const colorIndex = Math.floor(Math.random() * colors.length);
-      currentColor = colors[colorIndex];
-      isGreen = currentColor === "#005000";
-      currentTrialType = isGreen ? "nogo" : "go";
+    clearTimeout(initialTimeout);
+    clearTimeout(timeoutId);
 
-      centerCircle.style.backgroundColor = currentColor;
+    // INITIAL_DELAY_BEFORE_STIM = 2000 ms
+    initialTimeout = setTimeout(startColorCycle, 2000);
+  }
 
-      stimulusShownAt = performance.now();
+  /**
+   * Entrypoint for the stimulus cycle; currently a thin wrapper around showNextStimulus().
+   * Keeps the name separate in case a more complex schedule is needed later.
+   */
+  function startColorCycle() {
+    showNextStimulus();
+  }
 
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(onTrialWindowEnd, 2000);
-    }
+  /**
+   * Select and present the next stimulus color, derive trial type, and arm the response window.
+   * Side effects:
+   * - Sets `currentColor`, `isGreen`, `currentTrialType`.
+   * - Records `stimulusShownAt` and starts TRIAL_WINDOW timeout (2000ms).
+   */
+  function showNextStimulus() {
+    if (showingFeedback || !cycleStarted) return;
 
-    function onTrialWindowEnd() {
-      if (showingFeedback) return;
+    const colorIndex = Math.floor(Math.random() * colors.length);
+    currentColor = colors[colorIndex];
+    isGreen = currentColor === "#005000";
+    currentTrialType = isGreen ? "nogo" : "go";
 
-      if (currentTrialType === "nogo") {
-        // Correct withhold
-        liveSend({
-          trial_index: trialIndex,
-          trial_type: "nogo",
-          is_correct: true,
+    centerCircle.style.backgroundColor = currentColor;
+    stimulusShownAt = performance.now();
+
+    clearTimeout(timeoutId);
+    // TRIAL_WINDOW = 2000 ms
+    timeoutId = setTimeout(onTrialWindowEnd, 2000);
+  }
+
+  /**
+   * Handle the end of the response window.
+   * - NOGO: no action → correct withhold.
+   * - GO: if no release → omission; if released but not clicked → no_click.
+   * Emits a TrialOutcomePayload and advances the trial index.
+   */
+  function onTrialWindowEnd() {
+    if (showingFeedback) return;
+
+    if (currentTrialType === "nogo") {
+      // Correct withhold
+      /** @type {TrialOutcomePayload} */
+      const payload = {
+        trial_index: trialIndex,
+        trial_type: "nogo",
+        is_correct: true,
+        reaction_time: null,
+        movement_time: null,
+        error_type: null,
+      };
+      liveSend(payload);
+      trialIndex++;
+      cycleStarted = false;
+      startTrial();
+    } else {
+      // GO trial ended
+      if (releaseAt === null) {
+        showAndLog("Missed!", {
+          trial_type: "go",
+          is_correct: false,
           reaction_time: null,
           movement_time: null,
-          error_type: null,
+          error_type: "omission",
         });
-        trialIndex++;
-        cycleStarted = false;
-        startTrial();
-      } else {
-        // GO trial ended
-        if (releaseAt === null) {
-          showAndLog("Missed!", {
-            trial_type: "go",
-            is_correct: false,
-            reaction_time: null,
-            movement_time: null,
-            error_type: "omission",
-          });
-        } else if (awaitingClick) {
-          const rt = releaseAt - stimulusShownAt;
-          showAndLog("Too slow!", {
-            trial_type: "go",
-            is_correct: false,
-            reaction_time: rt.toFixed(2),
-            movement_time: null,
-            error_type: "no_click",
-          });
-        }
-      }
-    }
-
-    function showAndLog(text, payload) {
-      liveSend({
-        trial_index: trialIndex,
-        ...payload,
-      });
-      trialIndex++;
-      showMessage(text);
-    }
-
-    function showMessage(text) {
-      showingFeedback = true;
-      clearTimeout(timeoutId);
-      clearTimeout(initialTimeout);
-
-      cycleStarted = false;
-      centerCircle.style.backgroundColor = "gray";
-      message.innerText = text;
-
-      // Always reset hold button to white on feedback 
-      setHoldVisual(false);
-
-      setTimeout(() => {
-        showingFeedback = false;
-        message.innerText = "";
-        if (holding && !cycleStarted) startTrial();
-      }, 1000);
-    }
-
-    // --- Response Handlers ---
-
-    // Center click: only correct on GO trials after a release
-    function handleCenterClick() {
-      if (showingFeedback || !cycleStarted) return;
-
-      const now = performance.now();
-
-      if (currentTrialType === "go") {
-        if (!releaseAt) {
-          showAndLog("Release first!", {
-            trial_type: "go",
-            is_correct: false,
-            reaction_time: null,
-            movement_time: null,
-            error_type: "no_release",
-          });
-          return;
-        }
-        const rt = releaseAt - stimulusShownAt;  // reaction_time = release RT
-        const mt = now - releaseAt;              // movement time after release
-        liveSend({
-          trial_index: trialIndex,
+      } else if (awaitingClick) {
+        const rt = releaseAt - stimulusShownAt;
+        showAndLog("Too slow!", {
           trial_type: "go",
-          is_correct: true,
-          reaction_time: rt.toFixed(2),
-          movement_time: mt.toFixed(2),
-          error_type: null,
-        });
-        trialIndex++;
-        showMessage("Correct!");
-        awaitingClick = false;
-      } else {
-        // No-Go: any click is commission error
-        const rtClick = now - stimulusShownAt;
-        showAndLog("Should have withheld!", {
-          trial_type: "nogo",
           is_correct: false,
-          reaction_time: rtClick.toFixed(2),
+          reaction_time: rt.toFixed(2),
           movement_time: null,
-          error_type: "commission",
+          error_type: "no_click",
         });
       }
     }
+  }
 
-    // Start holding to begin a trial
-    holdButton.addEventListener("mousedown", () => {
-      if (cycleStarted || showingFeedback || holding) return;
-      holding = true;
-      setHoldVisual(true);  // was: holdButton.style.backgroundColor = "gray";
-      startTrial();
+  /**
+   * Convenience helper: send payload, advance trial index, and show a feedback message.
+   * @param {string} text - Feedback to show in #message.
+   * @param {Omit<TrialOutcomePayload, "trial_index">} payload - Outcome data without trial_index.
+   */
+  function showAndLog(text, payload) {
+    liveSend({
+      trial_index: trialIndex,
+      ...payload,
     });
+    trialIndex++;
+    showMessage(text);
+  }
 
-    // Release to respond; correct only if GO and followed by center click
-    holdButton.addEventListener("mouseup", () => {
-      if (!holding) return;
-      holding = false;
-      setHoldVisual(false); // ensure it returns to white immediately (NEW)
+  /**
+   * Show transient feedback, reset visuals, and (optionally) start next trial if user is holding.
+   * Side effects:
+   * - Cancels timers, sets center to gray, clears message after FEEDBACK_DURATION (1000ms).
+   * - Always resets hold-button to white on feedback.
+   * @param {string} text
+   */
+  function showMessage(text) {
+    showingFeedback = true;
+    clearTimeout(timeoutId);
+    clearTimeout(initialTimeout);
 
-      // If no stimulus yet (during gray delay)
-      if (!currentTrialType) {
-        showMessage("Too early!");
+    cycleStarted = false;
+    centerCircle.style.backgroundColor = "gray";
+    message.innerText = text;
+
+    // Always reset hold button to white on feedback
+    setHoldVisual(false);
+
+    // FEEDBACK_DURATION = 1000 ms
+    setTimeout(() => {
+      showingFeedback = false;
+      message.innerText = "";
+      if (holding && !cycleStarted) startTrial();
+    }, 1000);
+  }
+
+  /**
+   * Handle click on the center stimulus.
+   * Valid only on GO trials after a recorded release; otherwise logs an error.
+   * Emits either a correct TrialOutcomePayload (with reaction_time & movement_time)
+   * or an error with `error_type="no_release"`.
+   * @listens {MouseEvent} click on #center-circle
+   */
+  function handleCenterClick() {
+    if (showingFeedback || !cycleStarted) return;
+
+    const now = performance.now();
+
+    if (currentTrialType === "go") {
+      if (!releaseAt) {
+        showAndLog("Release first!", {
+          trial_type: "go",
+          is_correct: false,
+          reaction_time: null,
+          movement_time: null,
+          error_type: "no_release",
+        });
         return;
       }
+      const rt = releaseAt - stimulusShownAt;  // reaction_time = release RT
+      const mt = now - releaseAt;              // movement time after release
+      /** @type {TrialOutcomePayload} */
+      const payload = {
+        trial_index: trialIndex,
+        trial_type: "go",
+        is_correct: true,
+        reaction_time: rt.toFixed(2),
+        movement_time: mt.toFixed(2),
+        error_type: null,
+      };
+      liveSend(payload);
+      trialIndex++;
+      showMessage("Correct!");
+      awaitingClick = false;
+    } else {
+      // No-Go: any click is commission error
+      const rtClick = now - stimulusShownAt;
+      showAndLog("Should have withheld!", {
+        trial_type: "nogo",
+        is_correct: false,
+        reaction_time: rtClick.toFixed(2),
+        movement_time: null,
+        error_type: "commission",
+      });
+    }
+  }
 
-      const now = performance.now();
-      const rtLeave = now - stimulusShownAt;
+  // --- Response Handlers ---
 
-      if (currentTrialType === "nogo") {
-        // Commission error: released on No-Go
-        showAndLog("Wrong!", {
-          trial_type: "nogo",
-          is_correct: false,
-          reaction_time: rtLeave.toFixed(2),
-          movement_time: null,
-          error_type: "commission",
-        });
-      } else {
-        // GO: record release time & wait for center click
-        releaseAt = now;
-        awaitingClick = true;
-        liveSend({
-          trial_index: trialIndex,
-          trial_type: "go",
-          leave_time: rtLeave.toFixed(2),
-        });
-      }
-    });
+  /**
+   * Start holding to begin a trial.
+   * Ignored if a cycle is already running or feedback is showing.
+   * @listens {MouseEvent} mousedown on #hold-button
+   */
+  holdButton.addEventListener("mousedown", () => {
+    if (cycleStarted || showingFeedback || holding) return;
+    holding = true;
+    setHoldVisual(true);
+    startTrial();
+  });
 
-    // Leaving the hold area while holding (this was the gray-stuck case)
-    holdButton.addEventListener("mouseleave", () => {
-      if (!holding) return;
-      console.log("lololol");
-      holding = false;
-      setHoldVisual(false); // FIX: always reset to white on leave 
+  /**
+   * Release to respond; correct only if GO and followed by center click.
+   * Handles "too early" (pre-stimulus) and NOGO commission errors.
+   * On GO, records release time and emits a GoReleaseProgress payload.
+   * @listens {MouseEvent} mouseup on #hold-button
+   */
+  holdButton.addEventListener("mouseup", () => {
+    if (!holding) return;
+    holding = false;
+    setHoldVisual(false); // ensure it returns to white immediately
 
-      if (!currentTrialType) {
-        showMessage("Release your mouse");
-      } else if (currentTrialType === "nogo") {
-        showAndLog("Wrong!", {  
-          trial_type: "nogo",
-          is_correct: false,
-          reaction_time: (performance.now() - stimulusShownAt).toFixed(2),
-          movement_time: null,
-          error_type: "commission",
-        });
-      } else {
-        // GO: treat like a normal release; wait for click
-        releaseAt = performance.now();
-        awaitingClick = true;
-        liveSend({
-          trial_index: trialIndex,
-          trial_type: "go",
-          leave_time: (releaseAt - stimulusShownAt).toFixed(2),
-        });
-      }
-    });
+    // If no stimulus yet (during gray delay)
+    if (!currentTrialType) {
+      showMessage("Too early!");
+      return;
+    }
 
-    centerCircle.addEventListener("click", handleCenterClick);
+    const now = performance.now();
+    const rtLeave = now - stimulusShownAt;
 
-    window.addEventListener("load", () => {
-      // Time in milliseconds (2 minutes)
-      const autoAdvanceMs = 2 * 60 * 1000;
+    if (currentTrialType === "nogo") {
+      // Commission error: released on No-Go
+      showAndLog("Wrong!", {
+        trial_type: "nogo",
+        is_correct: false,
+        reaction_time: rtLeave.toFixed(2),
+        movement_time: null,
+        error_type: "commission",
+      });
+    } else {
+      // GO: record release time & wait for center click
+      releaseAt = now;
+      awaitingClick = true;
+      /** @type {GoReleaseProgress} */
+      const progress = {
+        trial_index: trialIndex,
+        trial_type: "go",
+        leave_time: rtLeave.toFixed(2),
+      };
+      liveSend(progress);
+    }
+  });
 
-      setTimeout(() => {
-        document.getElementById("next-container").style.display = "block";
-      }, autoAdvanceMs);
-    });
-  </script>
-</body>
+  /**
+   * Treat leaving the hold area while holding as a release.
+   * Prevents the "stuck gray" state and applies the same logic as mouseup.
+   * @listens {MouseEvent} mouseleave on #hold-button
+   */
+  holdButton.addEventListener("mouseleave", () => {
+    if (!holding) return;
+    console.log("lololol");
+    holding = false;
+    setHoldVisual(false); // always reset to white on leave
+
+    if (!currentTrialType) {
+      showMessage("Release your mouse");
+    } else if (currentTrialType === "nogo") {
+      showAndLog("Wrong!", {
+        trial_type: "nogo",
+        is_correct: false,
+        reaction_time: (performance.now() - stimulusShownAt).toFixed(2),
+        movement_time: null,
+        error_type: "commission",
+      });
+    } else {
+      // GO: treat like a normal release; wait for click
+      releaseAt = performance.now();
+      awaitingClick = true;
+      /** @type {GoReleaseProgress} */
+      const progress = {
+        trial_index: trialIndex,
+        trial_type: "go",
+        leave_time: (releaseAt - stimulusShownAt).toFixed(2),
+      };
+      liveSend(progress);
+    }
+  });
+
+  centerCircle.addEventListener("click", handleCenterClick);
+
+  /**
+   * Reveal the NEXT container after a fixed delay.
+   * Note: set to 2 minutes for the actual session.
+   * @listens {Event} load on window
+   */
+  window.addEventListener("load", () => {
+    // Time in milliseconds (2 minutes)
+    const autoAdvanceMs = 2 * 60 * 1000;
+
+    setTimeout(() => {
+      document.getElementById("next-container").style.display = "block";
+    }, autoAdvanceMs);
+  });
+</script>
 
 {{ endblock }}

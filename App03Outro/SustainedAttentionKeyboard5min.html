@@ -1,180 +1,189 @@
-{{ block title }} SART {{ endblock }} {{ block content }} {% load otree static
-%}
+{{ block title }} SART {{ endblock }}
+{{ block content }}
+{% load otree static %}
 <!-- Load static files in oTree -->
 <link rel="stylesheet" href="{% static 'styles/assessment.css' %}" />
 <!-- External CSS -->
 
-<body>
+<!-- Container for page title + description + arena -->
+<div class="task-container">
+  <!-- Brief task description under the title -->
+  <p class="task-description">
+    Press the "3" key as soon as the circle turns any color. Do <strong>not</strong> press when it turns
+    <span style="color:#005000;">dark green</span>.
+  </p>
+
   <!-- Container for the circle stimulus -->
   <div class="circle-container">
     <!-- Central circle that displays numbers or messages -->
     <div class="circle-button" id="center-circle">3</div>
     <div id="message"></div>
   </div>
+</div>
 
-  <div id="next-container" style="display: none">
-      <p>{{ next_button }}</p>
-  </div>
+<!-- NEXT button centered below the task block -->
+<div id="next-container" style="display: none">
+  {{ next_button }}
+</div>
 
-  <script>
-    // --- DOM References ---
-    const centerCircle = document.getElementById("center-circle");
-    const message = document.getElementById("message");
+<script>
+  // --- DOM References ---
+  const centerCircle = document.getElementById("center-circle");
+  const message = document.getElementById("message");
 
-    // --- Stimulus Configuration ---
-    const colors = ["#FFCC00", "#90D050", "#3C5DAE", "#7A8DBE", "#005000"]; // #005000 = No-Go (green)
+  // --- Stimulus Configuration ---
+  const colors = ["#FFCC00", "#90D050", "#3C5DAE", "#7A8DBE", "#005000"]; // #005000 = No-Go (green)
 
-    // ---Trial State Variables ---
-    let currentColor = "";
-    let isGreen = false;                 // true => No-Go
-    let currentTrialType = null;         // "go" | "nogo"
-    let showingFeedback = false;
-    let stimulusShownAt = null;
-    let trialIndex = 0;
-    let missTimeout = null;              // for Go (non-green) omissions
-    let timeoutId = null;                // ends the trial window
-    let inputEnabled = false;            // user can respond?
-    let awaitingResponse = false;        // expecting a response? (true for Go)
-    let trialLogged = false;             // ensure each trial logs exactly once
+  // ---Trial State Variables ---
+  let currentColor = "";
+  let isGreen = false;                 // true => No-Go
+  let currentTrialType = null;         // "go" | "nogo"
+  let showingFeedback = false;
+  let stimulusShownAt = null;
+  let trialIndex = 0;
+  let missTimeout = null;              // for Go (non-green) omissions
+  let timeoutId = null;                // ends the trial window
+  let inputEnabled = false;            // user can respond?
+  let awaitingResponse = false;        // expecting a response? (true for Go)
+  let trialLogged = false;             // ensure each trial logs exactly once
 
-    function startTrial() {
-      centerCircle.style.backgroundColor = "gray";
-      centerCircle.innerText = "";
-      clearTimeout(missTimeout);
-      clearTimeout(timeoutId);
+  function startTrial() {
+    centerCircle.style.backgroundColor = "gray";
+    centerCircle.innerText = "";
+    clearTimeout(missTimeout);
+    clearTimeout(timeoutId);
 
-      setTimeout(() => {
-        startColorCycle();
-      }, 2000); // Gray screen delay
-    }
+    setTimeout(() => {
+      startColorCycle();
+    }, 2000); // Gray screen delay
+  }
 
-    function startColorCycle() {
-      showNextStimulus();
-    }
+  function startColorCycle() {
+    showNextStimulus();
+  }
 
-    function showNextStimulus() {
-      if (showingFeedback) return;
+  function showNextStimulus() {
+    if (showingFeedback) return;
 
-      clearTimeout(missTimeout);
-      clearTimeout(timeoutId);
-      inputEnabled = true;
-      trialLogged = false;
+    clearTimeout(missTimeout);
+    clearTimeout(timeoutId);
+    inputEnabled = true;
+    trialLogged = false;
 
-      const colorIndex = Math.floor(Math.random() * colors.length);
-      currentColor = colors[colorIndex];
-      isGreen = currentColor === "#005000";  // No-Go if true
-      currentTrialType = isGreen ? "nogo" : "go";
+    const colorIndex = Math.floor(Math.random() * colors.length);
+    currentColor = colors[colorIndex];
+    isGreen = currentColor === "#005000";  // No-Go if true
+    currentTrialType = isGreen ? "nogo" : "go";
 
-      centerCircle.style.backgroundColor = currentColor;
-      centerCircle.innerText = "3";
+    centerCircle.style.backgroundColor = currentColor;
+    centerCircle.innerText = "3";
 
-      stimulusShownAt = performance.now();
-      awaitingResponse = !isGreen; // expect response only for Go (non-green)
+    stimulusShownAt = performance.now();
+    awaitingResponse = !isGreen; // expect response only for Go (non-green)
 
-      // For Go trials: start omission timeout (miss if no response within window)
-      if (!isGreen) {
-        missTimeout = setTimeout(() => {
-          if (awaitingResponse) {
-            awaitingResponse = false;
-            inputEnabled = false;
-            sendTrialData(false, null);            // omission error
-            showMessage("Missed!");
-          }
-        }, 2000);
-      }
-
-      // Trial window end (both Go and No-Go)
-      timeoutId = setTimeout(() => {
-        // If it was No-Go (green) and we haven't logged anything, count correct withhold
-        if (isGreen && !trialLogged && !showingFeedback) {
+    // For Go trials: start omission timeout (miss if no response within window)
+    if (!isGreen) {
+      missTimeout = setTimeout(() => {
+        if (awaitingResponse) {
+          awaitingResponse = false;
           inputEnabled = false;
-          sendTrialData(true, null);               // correct withhold
-        }
-        if (!showingFeedback) {
-          resetAndRestartCycle();
-        }
+          sendTrialData(false, null);            // omission error
+          showMessage("Missed!");
+          }
       }, 2000);
     }
 
-    function showMessage(text) {
-      showingFeedback = true;
-      clearTimeout(missTimeout);
-      inputEnabled = false;
-
-      message.innerText = text;
-      centerCircle.innerText = "3";
-
-      setTimeout(() => {
-        showingFeedback = false;
+    // Trial window end (both Go and No-Go)
+    timeoutId = setTimeout(() => {
+      // If it was No-Go (green) and we haven't logged anything, count correct withhold
+      if (isGreen && !trialLogged && !showingFeedback) {
+        inputEnabled = false;
+        sendTrialData(true, null);               // correct withhold
+      }
+      if (!showingFeedback) {
         resetAndRestartCycle();
-      }, 1000); // Feedback display duration
-    }
+      }
+    }, 2000);
+  }
 
-    function resetAndRestartCycle() {
-      clearTimeout(timeoutId);
+  function showMessage(text) {
+    showingFeedback = true;
+    clearTimeout(missTimeout);
+    inputEnabled = false;
+
+    message.innerText = text;
+    centerCircle.innerText = "3";
+
+    setTimeout(() => {
+      showingFeedback = false;
+      resetAndRestartCycle();
+    }, 1000); // Feedback display duration
+  }
+
+  function resetAndRestartCycle() {
+    clearTimeout(timeoutId);
+    clearTimeout(missTimeout);
+    centerCircle.style.backgroundColor = "gray";
+    centerCircle.innerText = "";
+    message.innerText = "";
+
+    setTimeout(() => {
+      startColorCycle();
+    }, 2000); // Interstimulus gray delay
+  }
+
+  
+  function sendTrialData(isCorrect, rt) {
+    if (trialLogged) return;
+    liveSend({
+      trial_index: trialIndex,
+      is_correct: isCorrect,
+      reaction_time: rt !== null ? rt.toFixed(2) : null,
+      trial_type: currentTrialType, // "go" | "nogo"
+    });
+    trialLogged = true;
+    trialIndex++;
+  }
+
+  // Flipped SART logic:
+  //   - Green (No-Go): press => commission error (incorrect)
+  //   - Non-green (Go): press => correct; measure RT
+  function handleResponse() {
+    if (!inputEnabled || showingFeedback) return;
+
+    inputEnabled = false;
+
+    let rt = performance.now() - stimulusShownAt;
+
+    if (isGreen) {
+      awaitingResponse = false;
       clearTimeout(missTimeout);
-      centerCircle.style.backgroundColor = "gray";
-      centerCircle.innerText = "";
-      message.innerText = "";
-
-      setTimeout(() => {
-        startColorCycle();
-      }, 2000); // Interstimulus gray delay
+      sendTrialData(false, rt);                 // commission error
+      showMessage("Wrong!");
+    } else {
+      awaitingResponse = false;
+      clearTimeout(missTimeout);
+      sendTrialData(true, rt);                  // correct Go
+      showMessage("Correct!");
     }
+  }
 
-    // NOW INCLUDES trial_type
-    function sendTrialData(isCorrect, rt) {
-      if (trialLogged) return;
-      liveSend({
-        trial_index: trialIndex,
-        is_correct: isCorrect,
-        reaction_time: rt !== null ? rt.toFixed(2) : null,
-        trial_type: currentTrialType, // "go" | "nogo"
-      });
-      trialLogged = true;
-      trialIndex++;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "3") {
+      handleResponse();
     }
+  });
 
-    // Flipped SART logic:
-    //   - Green (No-Go): press => commission error (incorrect)
-    //   - Non-green (Go): press => correct; measure RT
-    function handleResponse() {
-      if (!inputEnabled || showingFeedback) return;
+  startTrial();
 
-      inputEnabled = false;
+  window.addEventListener("load", () => {
+    // Time in milliseconds (5 minutes)
+    const autoAdvanceMs = 5 * 60 * 1000;
 
-      let rt = performance.now() - stimulusShownAt;
-
-      if (isGreen) {
-        awaitingResponse = false;
-        clearTimeout(missTimeout);
-        sendTrialData(false, rt);                 // commission error
-        showMessage("Wrong!");
-      } else {
-        awaitingResponse = false;
-        clearTimeout(missTimeout);
-        sendTrialData(true, rt);                  // correct Go
-        showMessage("Correct!");
-      }
-    }
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "3") {
-        handleResponse();
-      }
-    });
-
-    startTrial();
-
-    window.addEventListener("load", () => {
-      // Time in milliseconds (5 minutes)
-      const autoAdvanceMs = 5 * 60 * 1000;
-
-      setTimeout(() => {
-        document.getElementById("next-container").style.display = "block";
-      }, autoAdvanceMs);
-    });
-  </script>
-</body>
+    setTimeout(() => {
+      document.getElementById("next-container").style.display = "block";
+    }, autoAdvanceMs);
+  });
+</script>
 
 {{ formfields }} {{ endblock }}

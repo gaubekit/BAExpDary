@@ -1,15 +1,25 @@
 body {
-  display: flex;
+  display: block;
+  height: auto; 
   justify-content: center;
   align-items: center;
-  height: 100vh;
+  min-height: 100vh;
+  margin: 0;
   background-color: #f0f0f0;
 }
 
 .circle-container {
   position: relative;
   width: 400px;
-  height: 400px;
+  height: 560px;
+  margin: 8px auto 0;
+  padding-bottom: 56px;
+
+   /* parameters */
+  --W: 60px;                /* target width */
+  --r: calc(var(--W) / 2);  /* target radius */
+  --D: 280px;               /* center-to-center distance */
+  
 }
 
 .circle-button {
@@ -31,10 +41,12 @@ body {
 
 #center-circle {
   user-select: none;
-  top: 120px;
-  left: 170px;
-  width: 60px;
-  height: 60px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--W);
+  height: var(--W);
   background-color: gray;
   border: 1px solid #333;
   display: flex;
@@ -48,28 +60,56 @@ body {
 }
 
 #hold-button {
-  user-select: none;
-  top: 310px;
-  left: 170px;
+  position: absolute;
+  bottom: 24px;           
+  left: 50%;
+  /* place its CENTER exactly D below the center circle */
+  top: calc(50% + var(--D) - var(--r));
+  left: 50%;
+  transform: translateX(-50%);
   width: 60px;
   height: 60px;
   background-color: white;
   border: 1px solid #333;
   border-radius: 50%;
   cursor: pointer;
-  position: absolute;
   z-index: 5;
 }
 
 #message {
-  pointer-events: none;  
   position: absolute;
-  top: 250px;
+  top: calc(50% + 60px); 
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   font-size: 16px;
   font-weight: bold;
   color: black;
   text-align: center;
-  z-index: 10; 
+  pointer-events: none;
+}
+
+.task-container {
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.task-description {
+  font-size: 16px;
+  margin: 4px 0 8px;
+  color: #333;
+}
+
+.otree-title,
+.otree-title h1 {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+#next-container {
+  margin: 56px auto;
+  display: block;
+  font-size: 16px;
+  text-align: center;
+  padding: 6px 16px;
 }
