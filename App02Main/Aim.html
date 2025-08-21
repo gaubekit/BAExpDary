@@ -330,12 +330,12 @@ Task
 
         /*
         Starts the game. targetHit = 0 makes sure that if you already played a game, that we reset the score.
-        The game is currently set to 30 seconds.
+        The game is currently set to 120 seconds.
         Our buttons will be set to invisible after game start.
         */
         function startGame() {
             targetsHit = 0;
-            endTime = performance.now() + 30 * 1000; //30s
+            endTime = performance.now() + gameDuration * 1000; //120s
 
             startBtn.style.display = "none";
             result.style.display = "none";

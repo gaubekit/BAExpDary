@@ -1,6 +1,5 @@
-{{ block title }} SART {{ endblock }}
-{{ block content }}
-{% load otree static %}
+{{ block title }} SART {{ endblock }} {{ block content }} {% load otree static
+%}
 <!-- Load static files in oTree -->
 <link rel="stylesheet" href="{% static 'styles/assessment.css' %}" />
 <!-- External CSS -->
@@ -9,8 +8,9 @@
 <div class="task-container">
   <!-- Brief task description under the title -->
   <p class="task-description">
-    Press the "3" key as soon as the circle turns any color. Do <strong>not</strong> press when it turns
-    <span style="color:#005000;">dark green</span>.
+    Press the "3" key as soon as the circle turns any color. Do
+    <strong>not</strong> press when it turns
+    <span style="color: #005000">dark green</span>.
   </p>
 
   <!-- Container for the circle stimulus -->
@@ -22,9 +22,7 @@
 </div>
 
 <!-- NEXT button centered below the task block -->
-<div id="next-container" style="display: none">
-  {{ next_button }}
-</div>
+<div id="next-container" style="display: none">{{ next_button }}</div>
 
 <script>
   // --- DOM References ---
@@ -34,18 +32,26 @@
   // --- Stimulus Configuration ---
   const colors = ["#FFCC00", "#90D050", "#3C5DAE", "#7A8DBE", "#005000"]; // #005000 = No-Go (green)
 
-  // ---Trial State Variables ---
+  // --- Task/Trial State ---
+  let taskActive = true; // <-- global stop flag to halt everything after timer
   let currentColor = "";
-  let isGreen = false;                 // true => No-Go
-  let currentTrialType = null;         // "go" | "nogo"
+  let isGreen = false; // true => No-Go
+  let currentTrialType = null; // "go" | "nogo"
   let showingFeedback = false;
   let stimulusShownAt = null;
   let trialIndex = 0;
-  let missTimeout = null;              // for Go (non-green) omissions
-  let timeoutId = null;                // ends the trial window
-  let inputEnabled = false;            // user can respond?
-  let awaitingResponse = false;        // expecting a response? (true for Go)
-  let trialLogged = false;             // ensure each trial logs exactly once
+
+  // --- Timeout handles (track all so we can cancel on end) ---
+  let missTimeout = null; // for Go (non-green) omissions
+  let timeoutId = null; // ends the trial window
+  let feedbackTimeoutId = null; // feedback display
+  let interstimulusTimeoutId = null; // gray delay between trials
+  let trialDelayTimeoutId = null; // initial gray delay
+
+  // --- Input gating ---
+  let inputEnabled = false; // user can respond?
+  let awaitingResponse = false; // expecting a response? (true for Go)
+  let trialLogged = false; // ensure each trial logs exactly once
 
   function startTrial() {
     centerCircle.style.backgroundColor = "gray";
@@ -53,17 +59,20 @@
     clearTimeout(missTimeout);
     clearTimeout(timeoutId);
 
-    setTimeout(() => {
+    // Gray screen delay
+    trialDelayTimeoutId = setTimeout(() => {
+      if (!taskActive) return;
       startColorCycle();
     }, 2000); // Gray screen delay
   }
 
   function startColorCycle() {
+    if (!taskActive) return;
     showNextStimulus();
   }
 
   function showNextStimulus() {
-    if (showingFeedback) return;
+    if (!taskActive || showingFeedback) return;
 
     clearTimeout(missTimeout);
     clearTimeout(timeoutId);
@@ -72,7 +81,7 @@
 
     const colorIndex = Math.floor(Math.random() * colors.length);
     currentColor = colors[colorIndex];
-    isGreen = currentColor === "#005000";  // No-Go if true
+    isGreen = currentColor === "#005000"; // No-Go if true
     currentTrialType = isGreen ? "nogo" : "go";
 
     centerCircle.style.backgroundColor = currentColor;
@@ -84,21 +93,24 @@
     // For Go trials: start omission timeout (miss if no response within window)
     if (!isGreen) {
       missTimeout = setTimeout(() => {
+        if (!taskActive) return;
         if (awaitingResponse) {
           awaitingResponse = false;
           inputEnabled = false;
-          sendTrialData(false, null);            // omission error
+          sendTrialData(false, null); // omission error
           showMessage("Missed!");
-          }
+        }
       }, 2000);
     }
 
     // Trial window end (both Go and No-Go)
     timeoutId = setTimeout(() => {
+      if (!taskActive || showingFeedback) return;
+
       // If it was No-Go (green) and we haven't logged anything, count correct withhold
-      if (isGreen && !trialLogged && !showingFeedback) {
+      if (isGreen && !trialLogged) {
         inputEnabled = false;
-        sendTrialData(true, null);               // correct withhold
+        sendTrialData(true, null); // correct withhold
       }
       if (!showingFeedback) {
         resetAndRestartCycle();
@@ -107,6 +119,7 @@
   }
 
   function showMessage(text) {
+    if (!taskActive) return;
     showingFeedback = true;
     clearTimeout(missTimeout);
     inputEnabled = false;
@@ -114,27 +127,31 @@
     message.innerText = text;
     centerCircle.innerText = "3";
 
-    setTimeout(() => {
+    // Feedback display duration
+    feedbackTimeoutId = setTimeout(() => {
+      if (!taskActive) return;
       showingFeedback = false;
       resetAndRestartCycle();
     }, 1000); // Feedback display duration
   }
 
   function resetAndRestartCycle() {
+    if (!taskActive) return;
     clearTimeout(timeoutId);
     clearTimeout(missTimeout);
     centerCircle.style.backgroundColor = "gray";
     centerCircle.innerText = "";
     message.innerText = "";
 
-    setTimeout(() => {
+    // Interstimulus gray delay
+    interstimulusTimeoutId = setTimeout(() => {
+      if (!taskActive) return;
       startColorCycle();
     }, 2000); // Interstimulus gray delay
   }
 
-  
   function sendTrialData(isCorrect, rt) {
-    if (trialLogged) return;
+    if (!taskActive || trialLogged) return; // guard after time's up
     liveSend({
       trial_index: trialIndex,
       is_correct: isCorrect,
@@ -149,40 +166,70 @@
   //   - Green (No-Go): press => commission error (incorrect)
   //   - Non-green (Go): press => correct; measure RT
   function handleResponse() {
-    if (!inputEnabled || showingFeedback) return;
+    if (!taskActive || !inputEnabled || showingFeedback) return;
 
     inputEnabled = false;
-
-    let rt = performance.now() - stimulusShownAt;
+    const rt = performance.now() - stimulusShownAt;
 
     if (isGreen) {
       awaitingResponse = false;
       clearTimeout(missTimeout);
-      sendTrialData(false, rt);                 // commission error
+      sendTrialData(false, rt); // commission error
       showMessage("Wrong!");
     } else {
       awaitingResponse = false;
       clearTimeout(missTimeout);
-      sendTrialData(true, rt);                  // correct Go
+      sendTrialData(true, rt); // correct Go
       showMessage("Correct!");
     }
   }
 
-  document.addEventListener("keydown", (e) => {
+  // Keep a reference so we can remove it on end
+  const onKeyDown = (e) => {
     if (e.key === "3") {
       handleResponse();
     }
-  });
+  };
+  document.addEventListener("keydown", onKeyDown);
 
+  // Cleanly stop everything and reveal NEXT
+  function endTask() {
+    if (!taskActive) return;
+    taskActive = false;
+    inputEnabled = false;
+    awaitingResponse = false;
+
+    // Clear all timers
+    [
+      missTimeout,
+      timeoutId,
+      feedbackTimeoutId,
+      interstimulusTimeoutId,
+      trialDelayTimeoutId,
+    ].forEach((id) => {
+      if (id) clearTimeout(id);
+    });
+
+    // UI tidy-up
+    centerCircle.style.backgroundColor = "gray";
+    centerCircle.innerText = "";
+    message.innerText = "Time!";
+
+    // Stop further input
+    document.removeEventListener("keydown", onKeyDown);
+
+    // Show NEXT button (as before)
+    document.getElementById("next-container").style.display = "block";
+  }
+
+  // Kick off first trial
   startTrial();
 
+  // Global timer -> stop the loop
   window.addEventListener("load", () => {
     // Time in milliseconds (5 minutes)
     const autoAdvanceMs = 5 * 60 * 1000;
-
-    setTimeout(() => {
-      document.getElementById("next-container").style.display = "block";
-    }, autoAdvanceMs);
+    setTimeout(() => endTask(), autoAdvanceMs);
   });
 </script>
 

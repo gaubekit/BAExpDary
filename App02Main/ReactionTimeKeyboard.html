@@ -1,4 +1,5 @@
-{{ block title }} Reaction Time {{ endblock }} {{ block content }} {% load otree static %}
+{{ block title }} Reaction Time {{ endblock }} {{ block content }} {% load otree
+static %}
 <link rel="stylesheet" href="{% static 'styles/assessment.css' %}" />
 
 <div class="task-container">
@@ -23,9 +24,12 @@
   const message = document.getElementById("message");
 
   // --- State Variables ---
+  let taskActive = true; // <-- stop-flag: when false, no more trials or sends
   let isGreen = false;
   let waiting = false;
-  let timeoutId = null;
+  let timeoutId = null; // random delay to show green
+  let messageTimeoutId = null; // clears feedback message
+  let nextTrialTimeoutId = null; // schedules the next trial
   let stimulusShownAt = null;
   let trialIndex = 0;
 
@@ -34,9 +38,13 @@
    * @param {string} text - Message to display
    */
   function showMessage(text) {
+    if (!taskActive) return;
     message.innerText = text;
     centerCircle.innerText = "";
-    setTimeout(() => {
+    // Message visible for 1s
+    clearTimeout(messageTimeoutId);
+    messageTimeoutId = setTimeout(() => {
+      if (!taskActive) return;
       message.innerText = "";
     }, 1000); // Message visible for 1s
   }
@@ -45,13 +53,20 @@
    * Starts a new trial: waits, then turns the circle green.
    */
   function startTrial() {
+    if (!taskActive) return;
     isGreen = false;
     waiting = true;
     stimulusShownAt = null;
     centerCircle.style.backgroundColor = "gray";
 
-    const delay = Math.random() * 3000 + 1000; // Random delay between 1–4s
+    // Clear any pending timers from prior trial
+    clearTimeout(timeoutId);
+    clearTimeout(nextTrialTimeoutId);
+
+    // Random delay between 1–4s
+    const delay = Math.random() * 3000 + 1000;
     timeoutId = setTimeout(() => {
+      if (!taskActive) return;
       centerCircle.style.backgroundColor = "#005000"; // Green = go
       centerCircle.innerText = "3";
       isGreen = true;
@@ -61,38 +76,78 @@
   }
 
   /**
-   * Handles participant's response via click or key.
+   * Handles participant's response via key.
    * Sends RT if correct or gives early warning.
    */
   function handleClick() {
+    if (!taskActive) return;
+
     if (waiting && !isGreen) {
+      // Premature response
       clearTimeout(timeoutId);
       showMessage("Too soon!");
       startTrial(); // Restart trial on premature click
     } else if (isGreen) {
       const rt = performance.now() - stimulusShownAt;
+
       showMessage("Correct!");
-      liveSend({
-        trial_index: trialIndex,
-        reaction_time: rt.toFixed(2),
-      });
-      trialIndex++;
+      // Guard to avoid sends after timer
+      if (taskActive) {
+        liveSend({
+          trial_index: trialIndex,
+          reaction_time: rt.toFixed(2),
+        });
+        trialIndex++;
+      }
+
       isGreen = false;
       centerCircle.style.backgroundColor = "gray";
 
       // Begin next trial after a short delay
-      setTimeout(startTrial, 1000);
+      clearTimeout(nextTrialTimeoutId);
+      nextTrialTimeoutId = setTimeout(() => {
+        if (!taskActive) return;
+        startTrial();
+      }, 1000);
     }
   }
 
   // --- Event Listeners ---
 
   // Respond to keyboard input ("3" key)
-  document.addEventListener("keydown", (e) => {
+  const onKeyDown = (e) => {
     if (e.key === "3") {
       handleClick();
     }
-  });
+  };
+  document.addEventListener("keydown", onKeyDown);
+
+  // Cleanly stop everything and reveal NEXT
+  function endTask() {
+    if (!taskActive) return;
+    taskActive = false;
+
+    // Clear all timers
+    [timeoutId, messageTimeoutId, nextTrialTimeoutId].forEach((id) => {
+      if (id) clearTimeout(id);
+    });
+
+    // UI tidy-up
+    waiting = false;
+    isGreen = false;
+    centerCircle.style.backgroundColor = "gray";
+    centerCircle.innerText = "";
+    message.innerText = "Time!";
+
+    // Stop further input
+    document.removeEventListener("keydown", onKeyDown);
+
+    // Show NEXT
+    document.getElementById("next-container").style.display = "block";
+
+    // (Optional) auto-submit page:
+    // document.querySelector("form")?.submit();
+  }
 
   // --- Begin Experiment ---
   startTrial();
@@ -100,10 +155,7 @@
   window.addEventListener("load", () => {
     // Time in milliseconds (2 minutes)
     const autoAdvanceMs = 2 * 60 * 1000;
-
-    setTimeout(() => {
-      document.getElementById("next-container").style.display = "block";
-    }, autoAdvanceMs);
+    setTimeout(() => endTask(), autoAdvanceMs);
   });
 </script>
 

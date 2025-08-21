@@ -74,7 +74,7 @@ using "devtools" or "view source".
   function sendDifficultyLevel() {
     console.log("Received request to send difficulty level. Round: " + {{ player.round_number }});
     let level = 'level1';
-    / Level 1 hardcoded for both rounds
+    // Level 1 hardcoded for both rounds
 
     myUnityInstance.SendMessage('WebBridgeObject', 'SetLevel', level);
     console.log("Sent level " + level + " to unity iframe.");

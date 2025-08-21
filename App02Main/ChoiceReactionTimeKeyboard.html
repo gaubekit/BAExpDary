@@ -145,19 +145,26 @@ content }} {% load otree static %}
   layoutCircles();
   window.addEventListener("resize", layoutCircles);
 
-  // --- Trial State Variables ---
+  // --- Trial / Task State ---
+  let taskActive = true;          // <-- global stop flag (halts scheduling, input, sends)
   let activeIndex = -1;
   let trialIndex = 0;
   let stimulusTime = null;
-  let timeoutId = null;
+
+  // --- Timeout handles (track all so we can cancel on end) ---
+  let timeoutId = null;           // random delay to show green (stimulus timer)
+  let messageTimeoutId = null;    // clears feedback message
 
   /**
    * Displays a short feedback message in the center circle.
    * @param {string} text - Message to display
    */
   function showMessage(text) {
+    if (!taskActive) return;
     centerCircle.innerText = text;
-    setTimeout(() => {
+    clearTimeout(messageTimeoutId);
+    messageTimeoutId = setTimeout(() => {
+      if (!taskActive) return;
       centerCircle.innerText = "";
     }, 1000); // 1s duration
   }
@@ -175,14 +182,21 @@ content }} {% load otree static %}
    * Also records the time the stimulus appeared.
    */
   function highlightRandomCircle() {
+    if (!taskActive) return;
+
+    // clear prior highlight
     if (activeIndex !== -1) {
       circleElements[activeIndex].classList.remove("active");
+      activeIndex = -1;
     }
+    stimulusTime = null;
 
-    activeIndex = getRandomIndex();
+    // Random delay between 1–4s
     const delay = Math.random() * 3000 + 1000;
-
+    clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
+      if (!taskActive) return;
+      activeIndex = getRandomIndex();
       circleElements[activeIndex].classList.add("active");
       stimulusTime = performance.now();
     }, delay);
@@ -190,38 +204,76 @@ content }} {% load otree static %}
 
   /**
    * Records the user's response data and sends it via liveSend.
-   * @param {number} index - The index of the clicked or pressed circle
+   * @param {number} index - The index of the pressed circle
    */
   function recordReaction(index) {
+    if (!taskActive || stimulusTime === null || activeIndex === -1) return;
     const responseTime = performance.now() - stimulusTime;
 
+    // Guard to avoid sends after time's up
+    if (!taskActive) return;
     liveSend({
       trial_index: trialIndex,
       clicked_index: index,
       is_correct: index === activeIndex,
       reaction_time: responseTime.toFixed(2),
     });
-
     trialIndex++;
   }
 
   // --- Event Listeners (Keyboard-Based) ---
-  document.addEventListener("keydown", (e) => {
+  const onKeyDown = (e) => {
+    if (!taskActive) return;
+
     const key = parseInt(e.key, 10);
-    if (!isNaN(key) && key >= 1 && key <= 5) {
-      const index = key - 1;
+    if (Number.isNaN(key) || key < 1 || key > 5) return;
 
-      if (index === activeIndex) {
-        clearTimeout(timeoutId);
-        showMessage("Correct!");
-      } else {
-        showMessage("Wrong!");
-      }
+    const index = key - 1;
 
-      recordReaction(index);
-      highlightRandomCircle();
+    // Ignore premature responses (no stimulus yet)
+    if (stimulusTime === null || activeIndex === -1) return;
+
+    if (index === activeIndex) {
+      clearTimeout(timeoutId);
+      showMessage("Correct!");
+    } else {
+      showMessage("Wrong!");
     }
-  });
+
+    recordReaction(index);
+
+    // prepare next trial immediately (original behavior preserved)
+    highlightRandomCircle();
+  };
+  document.addEventListener("keydown", onKeyDown);
+
+  // Cleanly stop everything and reveal NEXT
+  function endTask() {
+    if (!taskActive) return;
+    taskActive = false;
+
+    // Clear timers
+    [timeoutId, messageTimeoutId].forEach((id) => id && clearTimeout(id));
+
+    // Unhighlight any active circle
+    if (activeIndex !== -1) {
+      circleElements[activeIndex].classList.remove("active");
+      activeIndex = -1;
+    }
+
+    // UI tidy-up
+    stimulusTime = null;
+    centerCircle.innerText = "Time!";
+
+    // Stop further input
+    document.removeEventListener("keydown", onKeyDown);
+
+    // Show NEXT
+    document.getElementById("next-container").style.display = "block";
+
+    // (Optional) auto-submit page:
+    // document.querySelector("form")?.submit();
+  }
 
   // --- Start First Trial ---
   highlightRandomCircle();
@@ -229,10 +281,9 @@ content }} {% load otree static %}
   window.addEventListener("load", () => {
     // Time in milliseconds (2 minutes)
     const autoAdvanceMs = 2 * 60 * 1000;
-    setTimeout(() => {
-      document.getElementById("next-container").style.display = "block";
-    }, autoAdvanceMs);
+    setTimeout(() => endTask(), autoAdvanceMs);
   });
 </script>
+
 
 {{ formfields }} {{ endblock }}
