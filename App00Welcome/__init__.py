@@ -27,9 +27,9 @@ class Player(BasePlayer):
 
 
 # PAGES
-class MyPage(Page):
+class Intro(Page):
     pass
 
 page_sequence = [
-    MyPage,
+    Intro,
 ]
